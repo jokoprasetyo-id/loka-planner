@@ -138,6 +138,23 @@
             }
         };
 
+        // Inisialisasi Database Cloud di Luar Komponen
+        let app, auth, db, appId;
+
+        const initFirebase = () => {
+            const MY_FIREBASE_CONFIG = {
+                apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
+                authDomain: "lokaplanner-finance.firebaseapp.com",
+                projectId: "lokaplanner-finance"
+            };
+            const firebaseConfig = typeof window.__firebase_config !== 'undefined' && window.__firebase_config ? JSON.parse(window.__firebase_config) : MY_FIREBASE_CONFIG;
+            
+            app = window.FB.initializeApp(firebaseConfig);
+            auth = window.FB.getAuth(app);
+            db = window.FB.getFirestore(app);
+            appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id';
+        };
+
         function App() {
             const [activeTab, setActiveTab] = useState('dashboard');
             const [plannerTab, setPlannerTab] = useState('budget');
@@ -195,128 +212,74 @@
             const [isAddingDebt, setIsAddingDebt] = useState(false);
             const [isAddingCategory, setIsAddingCategory] = useState(false);
 
+            // 1. Setup Autentikasi Pengguna
             useEffect(() => {
-                if (!window.FB) return;
-
-                const MY_FIREBASE_CONFIG = {
-                    apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
-                    authDomain: "lokaplanner-finance.firebaseapp.com",
-                    projectId: "lokaplanner-finance"
-                };
-
-                let initializedApp, initializedAuth, initializedDb, resolvedAppId;
-
-                try {
-                    if (typeof window.__firebase_config !== 'undefined' && window.__firebase_config) {
-                        const firebaseConfig = JSON.parse(window.__firebase_config);
-                        initializedApp = window.FB.initializeApp(firebaseConfig);
-                        resolvedAppId = (typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id').replace(/\//g, '_');
-                    } else {
-                        initializedApp = window.FB.initializeApp(MY_FIREBASE_CONFIG);
-                        resolvedAppId = "lokaplanner-finance-app"; 
-                    }
-                    
-                    initializedAuth = window.FB.getAuth(initializedApp);
-                    initializedDb = window.FB.getFirestore(initializedApp);
-
-                    setAuth(initializedAuth);
-                    setDb(initializedDb);
-                    setAppId(resolvedAppId);
-
-                    const initAuth = async () => {
-                        try {
-                            setCloudSyncStatus('Mengecek koneksi...');
-                            setIsSyncError(false);
-                            if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-                                await window.FB.signInWithCustomToken(initializedAuth, window.__initial_auth_token);
-                            } else {
-                                await initializedAuth.authStateReady(); 
-                                if (!initializedAuth.currentUser) {
-                                    await window.FB.signInAnonymously(initializedAuth);
-                                }
-                            }
-                        } catch (e) { 
-                            setCloudSyncStatus('Mode Lokal Aktif');
-                            setIsSyncError(true);
-                            setTransactions(INITIAL_TRANSACTIONS);
-                            isDataLoadedRef.current = true; 
-                        }
-                    };
-                    
-                    initAuth();
-
-                    const unsubscribe = window.FB.onAuthStateChanged(initializedAuth, async (currentUser) => {
-                        if (currentUser) {
-                            setUser(currentUser);
-                            setCloudSyncStatus(currentUser.isAnonymous ? 'Mode Lokal Aktif' : 'Tersambung Cloud ✓');
+                if (!auth) return;
+                const initializeAuth = async () => {
+                    try {
+                        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                            await window.FB.signInWithCustomToken(auth, window.__initial_auth_token);
                         } else {
-                             setUser(null);
-                             setTransactions(INITIAL_TRANSACTIONS);
+                            await window.FB.signInAnonymously(auth);
                         }
-                    });
+                    } catch (error) {
+                        console.error("Auth Error:", error);
+                        setCloudSyncStatus('Gagal Akses Akun');
+                    }
+                };
+                initializeAuth();
 
-                    return () => unsubscribe();
+                const unsubscribe = window.FB.onAuthStateChanged(auth, (currentUser) => {
+                    setUser(currentUser);
+                    if (currentUser) {
+                        setCloudSyncStatus(currentUser.isAnonymous ? 'Mode Lokal/Anonim ✓' : 'Tersambung Akun Google ✓');
+                    } else {
+                        setCloudSyncStatus('Terputus');
+                        setTransactions(INITIAL_TRANSACTIONS);
+                    }
+                });
 
-                } catch (error) {
-                    setCloudSyncStatus('Mode Lokal Aktif');
-                    setIsSyncError(true);
-                    setTransactions(INITIAL_TRANSACTIONS);
-                    isDataLoadedRef.current = true;
-                }
+                return () => unsubscribe();
             }, []);
 
+            // 2. Fetch Data (Hanya memuat dari server 1x saat pertama buka agar tidak konflik)
             useEffect(() => {
-                if (!user || !db || !window.FB) return;
+                if (!user || !db) return;
 
                 const docRef = window.FB.doc(db, 'artifacts', appId, 'users', user.uid, 'appData', 'state');
-                setIsSyncError(false);
-
-                const applyCloudData = (data) => {
-                    if (data.transactions) setTransactions(data.transactions);
-                    if (data.categories) setCategories(data.categories);
-                    if (data.budgets) setBudgets(data.budgets);
-                    if (data.goals) setGoals(data.goals);
-                    if (data.debts) setDebts(data.debts);
-                    if (data.assets) setAssets(data.assets);
-                    if (data.rates) setRates(data.rates);
-                };
-
+                
                 const unsubscribe = window.FB.onSnapshot(
                     docRef,
-                    { includeMetadataChanges: true },
                     (docSnap) => {
-                        if (docSnap.metadata.hasPendingWrites) return;
-
                         if (!isDataLoadedRef.current) {
-                            if (docSnap.exists()) applyCloudData(docSnap.data());
-                            else setTransactions(INITIAL_TRANSACTIONS);
-                            
+                            if (docSnap.exists()) {
+                                const data = docSnap.data();
+                                if (data.transactions) setTransactions(data.transactions);
+                                if (data.categories) setCategories(data.categories);
+                                if (data.budgets) setBudgets(data.budgets);
+                                if (data.goals) setGoals(data.goals);
+                                if (data.debts) setDebts(data.debts);
+                                if (data.assets) setAssets(data.assets);
+                                if (data.rates) setRates(data.rates);
+                            }
                             isDataLoadedRef.current = true;
                             setCloudSyncStatus('Tersinkronisasi ✓');
-                            setIsSyncError(false);
-                        } else if (!isSavingRef.current && !docSnap.metadata.fromCache) {
-                            if (docSnap.exists()) {
-                                applyCloudData(docSnap.data());
-                                setCloudSyncStatus('Tersinkronisasi ✓');
-                                setIsSyncError(false);
-                            }
                         }
                     },
                     (error) => {
+                        console.error("Snapshot Error:", error);
                         isDataLoadedRef.current = true;
-                        setIsSyncError(true);
                         setCloudSyncStatus('Mode Lokal Aktif');
-                        if (transactions.length === 0) setTransactions(INITIAL_TRANSACTIONS);
                     }
                 );
 
                 return () => unsubscribe();
-            }, [user, db, appId]);
+            }, [user]);
 
+            // 3. Save Data (Otomatis simpan perubahan setiap kali ada transaksi/edit)
             useEffect(() => {
-                if (!user || !db || !isDataLoadedRef.current || !window.FB || isSyncError) return;
+                if (!user || !db || !isDataLoadedRef.current) return;
 
-                isSavingRef.current = true; 
                 setCloudSyncStatus('Menyimpan...');
 
                 const timer = setTimeout(async () => {
@@ -324,17 +287,14 @@
                         const docRef = window.FB.doc(db, 'artifacts', appId, 'users', user.uid, 'appData', 'state');
                         await window.FB.setDoc(docRef, { transactions, categories, budgets, goals, debts, assets, rates }, { merge: true });
                         setCloudSyncStatus('Tersinkronisasi ✓');
-                        setIsSyncError(false);
                     } catch (error) {
-                        setIsSyncError(true);
+                        console.error("Save error:", error);
                         setCloudSyncStatus('Gagal Simpan');
-                    } finally {
-                        setTimeout(() => { isSavingRef.current = false; }, 500);
                     }
-                }, 800); 
+                }, 1000); 
 
                 return () => clearTimeout(timer);
-            }, [transactions, categories, budgets, goals, debts, assets, rates, user, db, appId]);
+            }, [transactions, categories, budgets, goals, debts, assets, rates, user]);
 
             const handleGoogleLogin = async () => {
                 if (!auth || !window.FB) return;
@@ -2082,6 +2042,7 @@
         }
 
         const initApp = () => {
+            initFirebase();
             const rootElement = document.getElementById('root');
             if (rootElement && !rootElement.hasChildNodes()) {
                 const root = ReactDOM.createRoot(rootElement);

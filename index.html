@@ -135,13 +135,9 @@
         };
 
         const INITIAL_BUDGETS = {};
-
         const INITIAL_ASSETS = [];
-
         const INITIAL_GOALS = [];
-
         const INITIAL_DEBTS = [];
-
         const INITIAL_TRANSACTIONS = [];
 
         const UNITS = [
@@ -197,7 +193,7 @@
             const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
             // Data States
-            const [transactions, setTransactions] = useState([]); // Awal kosong agar tidak overwrite cloud
+            const [transactions, setTransactions] = useState([]); 
             const [categories, setCategories] = useState(INITIAL_CATEGORIES);
             const [budgets, setBudgets] = useState(INITIAL_BUDGETS);
             const [goals, setGoals] = useState(INITIAL_GOALS);
@@ -221,10 +217,88 @@
             const [editingDebtData, setEditingDebtData] = useState({ name: '', total: '', paid: '', type: 'debt' });
             const [editingTx, setEditingTx] = useState(null);
 
-            // NEW: Debt Detail & History States
+            // Debt Detail & History States
             const [viewingDebtId, setViewingDebtId] = useState(null);
             const [isDebtTxModalOpen, setIsDebtTxModalOpen] = useState(false);
             const [debtTxForm, setDebtTxForm] = useState({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: true });
+
+            useEffect(() => {
+                if (!window.FB) return;
+
+                const MY_FIREBASE_CONFIG = {
+                    apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
+                    authDomain: "lokaplanner-finance.firebaseapp.com",
+                    projectId: "lokaplanner-finance",
+                    storageBucket: "lokaplanner-finance.firebasestorage.app",
+                    messagingSenderId: "1045492224881",
+                    appId: "1:1045492224881:web:8790f7c1b48c8371e1dcd0",
+                    measurementId: "G-H3FBSF7WDD"
+                };
+
+                let initializedApp, initializedAuth, initializedDb, resolvedAppId;
+
+                try {
+                    if (typeof window.__firebase_config !== 'undefined' && window.__firebase_config) {
+                        const firebaseConfig = JSON.parse(window.__firebase_config);
+                        initializedApp = window.FB.initializeApp(firebaseConfig);
+                        resolvedAppId = (typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id').replace(/\//g, '_');
+                    } else {
+                        initializedApp = window.FB.initializeApp(MY_FIREBASE_CONFIG);
+                        resolvedAppId = "lokaplanner-finance-app"; 
+                    }
+                    
+                    initializedAuth = window.FB.getAuth(initializedApp);
+                    initializedDb = window.FB.getFirestore(initializedApp);
+
+                    setAuth(initializedAuth);
+                    setDb(initializedDb);
+                    setAppId(resolvedAppId);
+
+                    const initAuth = async () => {
+                        try {
+                            setCloudSyncStatus('Mengecek koneksi...');
+                            setIsSyncError(false);
+                            if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                                await window.FB.signInWithCustomToken(initializedAuth, window.__initial_auth_token);
+                            } else {
+                                await initializedAuth.authStateReady(); 
+                                if (!initializedAuth.currentUser) {
+                                    await window.FB.signInAnonymously(initializedAuth);
+                                }
+                            }
+                        } catch (e) { 
+                            setCloudSyncStatus('Mode Lokal Aktif');
+                            setIsSyncError(true);
+                            setTransactions(INITIAL_TRANSACTIONS);
+                            isDataLoadedRef.current = true; 
+                        }
+                    };
+                    
+                    initAuth();
+
+                    const unsubscribe = window.FB.onAuthStateChanged(initializedAuth, async (currentUser) => {
+                        if (currentUser) {
+                            setUser(currentUser);
+                            setCloudSyncStatus(
+                                currentUser.isAnonymous 
+                                    ? 'Mode Lokal Aktif' 
+                                    : 'Tersambung Akun Google ✓'
+                            );
+                        } else {
+                             setUser(null);
+                             setTransactions(INITIAL_TRANSACTIONS);
+                        }
+                    });
+
+                    return () => unsubscribe();
+
+                } catch (error) {
+                    setCloudSyncStatus('Gagal terhubung ke Cloud');
+                    setIsSyncError(true);
+                    setTransactions(INITIAL_TRANSACTIONS);
+                    isDataLoadedRef.current = true;
+                }
+            }, []);
 
             useEffect(() => {
                 if (!user || !db || !window.FB) return;
@@ -250,12 +324,9 @@
                         if (docSnap.metadata.hasPendingWrites) return;
 
                         if (!isDataLoadedRef.current) {
-                            if (docSnap.exists()) {
-                                applyCloudData(docSnap.data());
-                            } else {
-                                // Jika tidak ada data di cloud (pengguna baru), simpan INITIAL
-                                setTransactions(INITIAL_TRANSACTIONS);
-                            }
+                            if (docSnap.exists()) applyCloudData(docSnap.data());
+                            else setTransactions(INITIAL_TRANSACTIONS);
+                            
                             isDataLoadedRef.current = true;
                             setCloudSyncStatus('Tersinkronisasi ✓');
                             setIsSyncError(false);
@@ -269,20 +340,12 @@
                         }
                     },
                     (error) => {
-                        console.error("Realtime listener error:", error);
                         isDataLoadedRef.current = true;
                         setIsSyncError(true);
+                        if (error.code === 'permission-denied') setCloudSyncStatus('Gagal: Akses Firestore Ditolak (Cek Rules)');
+                        else if (error.code === 'unavailable') setCloudSyncStatus('Gagal: Tidak ada koneksi internet');
+                        else setCloudSyncStatus('Mode Lokal Aktif');
                         
-                        // Error yang sangat spesifik agar tahu letak masalah
-                        if (error.code === 'permission-denied') {
-                            setCloudSyncStatus('Gagal: Akses Firestore Ditolak (Cek Rules)');
-                        } else if (error.code === 'unavailable') {
-                            setCloudSyncStatus('Gagal: Tidak ada koneksi internet');
-                        } else {
-                            setCloudSyncStatus('Mode Lokal Aktif');
-                        }
-                        
-                        // Jika saat gagal transaksi kosong, isi dengan dummy
                         if (transactions.length === 0) setTransactions(INITIAL_TRANSACTIONS);
                     }
                 );
@@ -305,13 +368,9 @@
                         setCloudSyncStatus('Tersinkronisasi ✓');
                         setIsSyncError(false);
                     } catch (error) {
-                        console.error("Save Data Error:", error);
                         setIsSyncError(true);
-                        if (error.code === 'permission-denied') {
-                            setCloudSyncStatus('Gagal Simpan: Akses Firestore Ditolak');
-                        } else {
-                            setCloudSyncStatus('Gagal Simpan ke Cloud');
-                        }
+                        if (error.code === 'permission-denied') setCloudSyncStatus('Gagal Simpan: Akses Firestore Ditolak');
+                        else setCloudSyncStatus('Gagal Simpan ke Cloud');
                     } finally {
                         setTimeout(() => { isSavingRef.current = false; }, 500);
                     }
@@ -529,6 +588,10 @@
             const totalBudgetSpent = useMemo(() => Object.keys(budgets).reduce((sum, cat) => sum + (categorySpending.find(c => c.name === cat)?.amount || 0), 0), [budgets, categorySpending]);
             const totalBills = useMemo(() => filteredTransactions.filter(t => t.type === 'bills').reduce((sum, t) => sum + t.amount, 0), [filteredTransactions]);
 
+            // Splitting Budgets for UI Planer Tab
+            const spendingBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.spending.includes(cat) || (!categories.spending.includes(cat) && !categories.bills.includes(cat))), [budgets, categories]);
+            const billsBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.bills.includes(cat)), [budgets, categories]);
+
             // --- GOALS (TABUNGAN) LOGIC ---
             const toggleGoalCollapse = (goalId) => {
                 triggerHaptic(10);
@@ -538,7 +601,6 @@
             
             const addGoalAsset = (goalId) => {
                 triggerHaptic(10);
-                // Ditambahkan default quantity: 0 agar fix bug penjumlahan
                 setGoals(goals.map(g => g.id !== goalId ? g : { ...g, assets: [...g.assets, { id: Date.now(), name: '', unit: 'IDR', amount: 0, quantity: 0 }] }));
             };
             
@@ -549,12 +611,9 @@
                         ...g,
                         assets: g.assets.map(a => {
                             if (a.id !== assetId) return a;
-                            
                             const updatedAsset = { ...a, [field]: value };
-                            // Menyatukan logic sinkronisasi kuantitas dan nominal dalam satu update
                             if (field === 'quantity') updatedAsset.amount = value;
                             if (field === 'amount') updatedAsset.quantity = value;
-                            
                             return updatedAsset;
                         })
                     };
@@ -752,7 +811,6 @@
                                         </td>
                                         <td className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-1.5">
-                                                {/* TOMBOL EDIT TRANSAKSI */}
                                                 <button
                                                     onClick={() => { triggerHaptic(15); setEditingTx(t); setIsAddModalOpen(true); }}
                                                     className="p-1.5 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors border border-transparent hover:border-slate-200"
@@ -760,7 +818,6 @@
                                                 >
                                                     <PencilSimple className="w-4 h-4" />
                                                 </button>
-                                                {/* TOMBOL HAPUS TRANSAKSI */}
                                                 <button
                                                     onClick={() => { triggerHaptic(15); setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id)); }}
                                                     className="p-1.5 bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors border border-transparent hover:border-rose-200"
@@ -793,73 +850,117 @@
                     </div>
 
                     {plannerTab === 'budget' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-right-8">
-                            <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                <h3 className="text-xl font-bold flex items-center gap-2 mb-2 text-slate-800">
-                                    <PieChart className="w-5 h-5 text-rose-500" /> Budget Bulanan
-                                </h3>
-                                <div className="flex justify-between items-center mb-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                    <div>
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase">Terpakai</p>
-                                        <p className="text-sm font-black text-rose-600">{displayMoney(totalBudgetSpent)}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase">Total Budget</p>
-                                        <p className="text-sm font-black text-slate-800">{displayMoney(totalBudgetSet)}</p>
-                                    </div>
+                        <div className="space-y-6 animate-in slide-in-from-right-8">
+                            {/* NEW: Top Unified Header Summary */}
+                            <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
+                                <div className="absolute -right-6 -top-6 opacity-5 pointer-events-none">
+                                    <PieChart className="w-48 h-48 -rotate-12" />
                                 </div>
-                                <div className="space-y-6">
-                                    {Object.entries(budgets).map(([category, limit]) => {
-                                        const spent = categorySpending.find(c => c.name === category)?.amount || 0;
-                                        const percentage = Math.min(100, (spent / limit) * 100);
-                                        const isOver = spent > limit;
-                                        
-                                        return (
-                                            <div key={category}>
-                                                <div className="flex justify-between text-sm mb-2">
-                                                    <span className="font-bold text-slate-700">{category}</span>
-                                                    <span className="text-slate-500 font-medium">
-                                                        <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
-                                                    </span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                                                    <div 
-                                                        className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                                                        style={{ width: `${percentage}%` }}
-                                                    ></div>
-                                                </div>
-                                                {isOver && <p className="text-xs font-bold text-rose-500 mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5"/> Over budget!</p>}
-                                            </div>
-                                        );
-                                    })}
-                                    {Object.keys(budgets).length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada budget diatur.</p>}
+                                <div className="relative z-10">
+                                    <p className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-1 flex items-center gap-1.5">
+                                        <Target className="w-4 h-4 text-emerald-400" /> Total Rencana Pengeluaran & Tagihan
+                                    </p>
+                                    <h3 className="text-3xl md:text-4xl font-black">{displayMoney(totalBudgetSet)}</h3>
+                                </div>
+                                <div className="relative z-10 w-full md:w-auto bg-slate-800/80 p-4 rounded-2xl border border-slate-700/50 text-right backdrop-blur-sm">
+                                    <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-1">Total Realisasi</p>
+                                    <p className="text-xl font-black text-rose-400">{displayMoney(totalBudgetSpent)}</p>
                                 </div>
                             </div>
 
-                            <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
-                                <div className="flex justify-between items-start mb-6">
-                                    <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-                                        <Receipt className="w-5 h-5 text-orange-500" /> Tagihan & Langganan
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* KIRI: Budget Kebutuhan */}
+                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                    <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                        <PieChart className="w-5 h-5 text-rose-500" /> Budget Kebutuhan
                                     </h3>
-                                    <div className="text-right bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100">
-                                        <p className="text-[10px] text-orange-600 font-bold uppercase">Total Dibayar</p>
-                                        <p className="text-sm font-black text-orange-700">{displayMoney(totalBills)}</p>
+                                    
+                                    <div className="space-y-6">
+                                        {spendingBudgets.map(([category, limit]) => {
+                                            const spent = categorySpending.find(c => c.name === category)?.amount || 0;
+                                            const percentage = Math.min(100, (spent / limit) * 100);
+                                            const isOver = spent > limit;
+                                            
+                                            return (
+                                                <div key={category}>
+                                                    <div className="flex justify-between text-sm mb-2">
+                                                        <span className="font-bold text-slate-700">{category}</span>
+                                                        <span className="text-slate-500 font-medium">
+                                                            <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                        <div 
+                                                            className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                                                            style={{ width: `${percentage}%` }}
+                                                        ></div>
+                                                    </div>
+                                                    {isOver && <p className="text-xs font-bold text-rose-500 mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5"/> Over budget!</p>}
+                                                </div>
+                                            );
+                                        })}
+                                        {spendingBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada budget kebutuhan.</p>}
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    {filteredTransactions.filter(t => t.type === 'bills').length > 0 ? (
-                                        filteredTransactions.filter(t => t.type === 'bills').map(t => (
-                                            <div key={t.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                                                <div>
-                                                    <p className="font-bold text-slate-800 text-sm">{t.description}</p>
-                                                    <p className="text-xs text-slate-500 font-medium mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</p>
+
+                                {/* KANAN: Rencana Tagihan & Langganan */}
+                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                                            <Receipt className="w-5 h-5 text-orange-500" /> Rencana Tagihan
+                                        </h3>
+                                        <div className="text-right bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100">
+                                            <p className="text-[10px] text-orange-600 font-bold uppercase">Total Dibayar</p>
+                                            <p className="text-sm font-black text-orange-700">{displayMoney(totalBills)}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Progress Bars Khusus Tagihan yang Di-budget-kan */}
+                                    <div className="space-y-6 mb-8">
+                                        {billsBudgets.map(([category, limit]) => {
+                                            const spent = categorySpending.find(c => c.name === category)?.amount || 0;
+                                            const percentage = Math.min(100, (spent / limit) * 100);
+                                            const isOver = spent > limit;
+                                            
+                                            return (
+                                                <div key={category}>
+                                                    <div className="flex justify-between text-sm mb-2">
+                                                        <span className="font-bold text-slate-700">{category}</span>
+                                                        <span className="text-slate-500 font-medium">
+                                                            <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                        <div 
+                                                            className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage >= 100 ? 'bg-emerald-400' : 'bg-orange-400'}`}
+                                                            style={{ width: `${percentage}%` }}
+                                                        ></div>
+                                                    </div>
                                                 </div>
-                                                <span className="font-black text-slate-800">{displayMoney(t.amount)}</span>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-slate-400 font-medium text-sm text-center py-6">Belum ada tagihan terbayar periode ini.</p>
-                                    )}
+                                            );
+                                        })}
+                                        {billsBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana tagihan.</p>}
+                                    </div>
+
+                                    {/* List Riwayat Tagihan Terbaru */}
+                                    <div className="border-t border-slate-100 pt-6">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Riwayat Tagihan Terakhir</h4>
+                                        <div className="space-y-4">
+                                            {filteredTransactions.filter(t => t.type === 'bills').length > 0 ? (
+                                                filteredTransactions.filter(t => t.type === 'bills').map(t => (
+                                                    <div key={t.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                                        <div>
+                                                            <p className="font-bold text-slate-800 text-sm">{t.description}</p>
+                                                            <p className="text-xs text-slate-500 font-medium mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</p>
+                                                        </div>
+                                                        <span className="font-black text-slate-800">{displayMoney(t.amount)}</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-slate-400 font-medium text-sm text-center py-4">Belum ada tagihan terbayar periode ini.</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -903,9 +1004,13 @@
                                                             <span className="text-xs font-bold text-slate-400">Rp</span>
                                                             <input
                                                                 type={privacyMode ? "password" : "text"}
+                                                                inputMode="numeric"
                                                                 className="w-24 bg-transparent border-none text-right text-sm font-bold text-slate-800 outline-none p-0 focus:text-indigo-500 border-b border-dashed border-transparent focus:border-indigo-500"
-                                                                value={privacyMode ? "********" : goal.target}
-                                                                onChange={(e) => updateGoal(goal.id, 'target', e.target.value.replace(/\D/g, ''))}
+                                                                value={privacyMode ? "********" : (goal.target ? Number(goal.target).toLocaleString('id-ID') : '')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value.replace(/\D/g, '');
+                                                                    updateGoal(goal.id, 'target', val ? Number(val) : '');
+                                                                }}
                                                                 onClick={(e) => e.stopPropagation()}
                                                                 placeholder="0"
                                                             />
@@ -952,12 +1057,13 @@
                                                                         <div className="flex flex-col items-end">
                                                                             <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-indigo-500 transition">
                                                                                 <input
-                                                                                    type={privacyMode ? "password" : "number"}
+                                                                                    type={privacyMode ? "password" : "text"}
+                                                                                    inputMode="numeric"
                                                                                     className="w-24 bg-transparent text-right text-sm font-bold outline-none px-2 py-1.5"
-                                                                                    value={privacyMode ? "12345678" : (asset.quantity !== undefined ? asset.quantity : asset.amount)}
+                                                                                    value={privacyMode ? "12345678" : (asset.quantity !== undefined && asset.quantity !== '' ? Number(asset.quantity).toLocaleString('id-ID') : '')}
                                                                                     onChange={(e) => {
-                                                                                        // Penyesuaian agar logic input memanggil update yang tersinkronisasi
-                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', e.target.value);
+                                                                                        const val = e.target.value.replace(/\D/g, '');
+                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', val !== '' ? Number(val) : '');
                                                                                     }}
                                                                                     placeholder="0"
                                                                                 />
@@ -1010,7 +1116,6 @@
                                         return (
                                             <div key={debt.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 relative">
                                                 {isEditing ? (
-                                                    // MODE EDIT HUTANG/PIUTANG
                                                     <div className="space-y-3">
                                                         <input 
                                                             type="text" 
@@ -1031,19 +1136,25 @@
                                                             <div>
                                                                 <label className="text-[10px] text-slate-500 font-bold block mb-1">Total {editingDebtData.type === 'debt' ? 'Pinjaman' : 'Diberikan'}</label>
                                                                 <input 
-                                                                    type="number" 
+                                                                    type="text" inputMode="numeric"
                                                                     className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
-                                                                    value={editingDebtData.total} 
-                                                                    onChange={e => setEditingDebtData({...editingDebtData, total: e.target.value})} 
+                                                                    value={editingDebtData.total ? Number(editingDebtData.total).toLocaleString('id-ID') : ''} 
+                                                                    onChange={e => {
+                                                                        const val = e.target.value.replace(/\D/g, '');
+                                                                        setEditingDebtData({...editingDebtData, total: val ? Number(val) : ''});
+                                                                    }} 
                                                                 />
                                                             </div>
                                                             <div>
                                                                 <label className="text-[10px] text-slate-500 font-bold block mb-1">Sudah Dibayar</label>
                                                                 <input 
-                                                                    type="number" 
+                                                                    type="text" inputMode="numeric"
                                                                     className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
-                                                                    value={editingDebtData.paid} 
-                                                                    onChange={e => setEditingDebtData({...editingDebtData, paid: e.target.value})} 
+                                                                    value={editingDebtData.paid ? Number(editingDebtData.paid).toLocaleString('id-ID') : ''} 
+                                                                    onChange={e => {
+                                                                        const val = e.target.value.replace(/\D/g, '');
+                                                                        setEditingDebtData({...editingDebtData, paid: val ? Number(val) : ''});
+                                                                    }} 
                                                                 />
                                                             </div>
                                                         </div>
@@ -1062,7 +1173,6 @@
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    // MODE NORMAL TAMPILAN
                                                     <>
                                                         <div className="flex justify-between items-start mb-2">
                                                             <div className="flex flex-col gap-1.5">
@@ -1073,7 +1183,6 @@
                                                             </div>
                                                             
                                                             <div className="flex gap-1.5">
-                                                                {/* TOMBOL EDIT */}
                                                                 <button
                                                                     onClick={() => { 
                                                                         triggerHaptic(10); 
@@ -1085,7 +1194,6 @@
                                                                 >
                                                                     <PencilSimple className="w-4 h-4" />
                                                                 </button>
-                                                                {/* TOMBOL HAPUS */}
                                                                 <button
                                                                     onClick={() => { triggerHaptic(15); setDebts(debts.filter(d => d.id !== debt.id)); }}
                                                                     className="p-1.5 bg-white text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg border border-slate-200 transition-colors shadow-sm"
@@ -1106,7 +1214,6 @@
                                                             </div>
                                                         </div>
                                                         
-                                                        {/* TOMBOL LIHAT DETAIL & RIWAYAT */}
                                                         <div className="mt-3">
                                                             <button 
                                                                 onClick={() => { triggerHaptic(10); setViewingDebtId(debt.id); }} 
@@ -1123,7 +1230,6 @@
                                     {debts.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada catatan hutang/piutang.</p>}
                                 </div>
                                 
-                                {/* FORM TAMBAH HUTANG/PIUTANG BARU */}
                                 <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100">
                                     <p className="text-xs font-bold text-slate-500 mb-2">Tambah Catatan Baru</p>
                                     <div className="flex flex-col gap-2">
@@ -1141,9 +1247,13 @@
                                                 <option value="receivable">Piutang (Beri Pinjaman)</option>
                                             </select>
                                             <input 
-                                                type="number" placeholder="Total (Rp)" 
+                                                type="text" inputMode="numeric" placeholder="Total (Rp)" 
                                                 className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold w-1/2 outline-none focus:border-indigo-400" 
-                                                value={newDebt.total} onChange={e => setNewDebt({...newDebt, total: e.target.value})} 
+                                                value={newDebt.total ? Number(newDebt.total).toLocaleString('id-ID') : ''} 
+                                                onChange={e => {
+                                                    const val = e.target.value.replace(/\D/g, '');
+                                                    setNewDebt({...newDebt, total: val ? Number(val) : ''});
+                                                }} 
                                             />
                                         </div>
                                         <button 
@@ -1372,7 +1482,15 @@
                                                     <span className="font-bold text-slate-700">{cat}</span>
                                                     {isEditing ? (
                                                         <div className="flex items-center gap-1.5">
-                                                            <input type="number" className="w-28 px-2 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold" value={editingBudgetLimit} onChange={e => setEditingBudgetLimit(e.target.value)} />
+                                                            <input 
+                                                                type="text" inputMode="numeric"
+                                                                className="w-28 px-2 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold" 
+                                                                value={editingBudgetLimit ? Number(editingBudgetLimit).toLocaleString('id-ID') : ''} 
+                                                                onChange={e => {
+                                                                    const val = e.target.value.replace(/\D/g, '');
+                                                                    setEditingBudgetLimit(val);
+                                                                }} 
+                                                            />
                                                             <button onClick={() => { triggerHaptic(20); setBudgets({ ...budgets, [cat]: Number(editingBudgetLimit) }); setEditingBudgetCat(null); }} className="p-1.5 bg-emerald-500 text-white rounded-md"><CheckCircle2 className="w-4 h-4" /></button>
                                                         </div>
                                                     ) : (
@@ -1391,7 +1509,15 @@
                                             <option value="">-- Pilih Kategori --</option>
                                             {[...categories.spending, ...categories.bills].map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                         </select>
-                                        <input type="number" placeholder="Nominal Limit (Rp)" className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newBudgetLimit} onChange={e => setNewBudgetLimit(e.target.value)}/>
+                                        <input 
+                                            type="text" inputMode="numeric" placeholder="Nominal Limit (Rp)" 
+                                            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" 
+                                            value={newBudgetLimit ? Number(newBudgetLimit).toLocaleString('id-ID') : ''} 
+                                            onChange={e => {
+                                                const val = e.target.value.replace(/\D/g, '');
+                                                setNewBudgetLimit(val);
+                                            }}
+                                        />
                                         <button onClick={() => { if(newBudgetCat && newBudgetLimit) { triggerHaptic(20); setBudgets({...budgets, [newBudgetCat]: Number(newBudgetLimit)}); setNewBudgetCat(''); setNewBudgetLimit(''); }}} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Simpan</button>
                                     </div>
                                 </div>
@@ -1417,7 +1543,16 @@
                                                                 <select className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold text-slate-700" value={editingAsset.unit} onChange={e => setEditingAsset({ ...editingAsset, unit: e.target.value })}>
                                                                     {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                                                 </select>
-                                                                <input type="number" className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold" value={editingAsset.quantity} onChange={e => setEditingAsset({ ...editingAsset, quantity: e.target.value })} placeholder="Saldo/Kuantitas" />
+                                                                <input 
+                                                                    type="text" inputMode="numeric"
+                                                                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold" 
+                                                                    value={editingAsset.quantity ? Number(editingAsset.quantity).toLocaleString('id-ID') : ''} 
+                                                                    onChange={e => {
+                                                                        const val = e.target.value.replace(/\D/g, '');
+                                                                        setEditingAsset({ ...editingAsset, quantity: val });
+                                                                    }} 
+                                                                    placeholder="Saldo/Kuantitas" 
+                                                                />
                                                             </div>
                                                             <div className="flex justify-end gap-2">
                                                                 <button onClick={() => { triggerHaptic(20); setAssets(assets.map(a => a.id === asset.id ? { ...editingAsset, id: asset.id, amount: Number(editingAsset.quantity), quantity: Number(editingAsset.quantity) } : a)); setEditingAssetId(null); }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold">Simpan</button>
@@ -1454,7 +1589,15 @@
                                         <select className="lg:col-span-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.unit} onChange={e => setNewAsset({...newAsset, unit: e.target.value})}>
                                             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                         </select>
-                                        <input type="number" placeholder="Saldo/Kuantitas" className="lg:col-span-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.quantity} onChange={e => setNewAsset({...newAsset, quantity: e.target.value})}/>
+                                        <input 
+                                            type="text" inputMode="numeric" placeholder="Saldo/Kuantitas" 
+                                            className="lg:col-span-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" 
+                                            value={newAsset.quantity ? Number(newAsset.quantity).toLocaleString('id-ID') : ''} 
+                                            onChange={e => {
+                                                const val = e.target.value.replace(/\D/g, '');
+                                                setNewAsset({...newAsset, quantity: val});
+                                            }}
+                                        />
                                         <button onClick={() => { if(newAsset.name && newAsset.quantity) { triggerHaptic(20); setAssets([...assets, { ...newAsset, id: Date.now(), quantity: Number(newAsset.quantity) }]); setNewAsset({ name: '', category: 'Bank Cash', unit: 'IDR', quantity: '' }); }}} className="lg:col-span-12 bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Tambah Aset Baru</button>
                                     </div>
                                 </div>
@@ -1660,7 +1803,16 @@
                                         <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Nominal (Rp)</label>
                                         <div className="relative">
                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xl">Rp</span>
-                                            <input type="number" required value={debtTxForm.amount} onChange={(e) => setDebtTxForm({...debtTxForm, amount: e.target.value})} className="w-full pl-14 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xl font-black text-slate-800 outline-none focus:border-[#2D5B99]" placeholder="0" />
+                                            <input 
+                                                type="text" inputMode="numeric" required 
+                                                value={debtTxForm.amount ? Number(debtTxForm.amount).toLocaleString('id-ID') : ''} 
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/\D/g, '');
+                                                    setDebtTxForm({...debtTxForm, amount: val ? Number(val) : ''});
+                                                }} 
+                                                className="w-full pl-14 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xl font-black text-slate-800 outline-none focus:border-[#2D5B99]" 
+                                                placeholder="0" 
+                                            />
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
@@ -1745,7 +1897,16 @@
                             <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Nominal (Rp)</label>
                             <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xl">Rp</span>
-                                <input type="number" required value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-2xl font-black text-slate-800 focus:outline-none focus:ring-4 focus:ring-emerald-500/20" placeholder="0" />
+                                <input 
+                                    type="text" inputMode="numeric" required 
+                                    value={amount ? Number(amount).toLocaleString('id-ID') : ''} 
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, '');
+                                        setAmount(val ? Number(val) : '');
+                                    }} 
+                                    className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-2xl font-black text-slate-800 focus:outline-none focus:ring-4 focus:ring-emerald-500/20" 
+                                    placeholder="0" 
+                                />
                             </div>
                         </div>
 
@@ -1795,7 +1956,6 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                // HANYA pasang PWA jika berjalan di server HTTP/HTTPS yang sah (mencegah error di preview/file lokal)
                 if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
                     navigator.serviceWorker.register('./sw.js')
                         .then((reg) => console.log('Service Worker Registered Sukses!', reg.scope))

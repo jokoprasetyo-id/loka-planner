@@ -242,7 +242,7 @@
                 return () => unsubscribe();
             }, []);
 
-            // 2. Fetch Data (Hanya memuat dari server 1x saat pertama buka agar tidak konflik)
+            // 2. Fetch Data (Real-time sync dari perangkat lain)
             useEffect(() => {
                 if (!user || !db) return;
 
@@ -250,10 +250,17 @@
                 
                 const unsubscribe = window.FB.onSnapshot(
                     docRef,
+                    { includeMetadataChanges: true },
                     (docSnap) => {
-                        if (!isDataLoadedRef.current) {
-                            if (docSnap.exists()) {
-                                const data = docSnap.data();
+                        // Abaikan pembaruan yang berasal dari proses simpan lokal (mencegah loop)
+                        if (docSnap.metadata.hasPendingWrites) return;
+
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            
+                            // Hanya perbarui state dari cloud JIKA aplikasi tidak sedang dalam proses menyimpan
+                            // Ini memastikan perubahan lokal Anda tidak tertimpa oleh data lama yang telat datang
+                            if (!isSavingRef.current) {
                                 if (data.transactions) setTransactions(data.transactions);
                                 if (data.categories) setCategories(data.categories);
                                 if (data.budgets) setBudgets(data.budgets);
@@ -261,9 +268,17 @@
                                 if (data.debts) setDebts(data.debts);
                                 if (data.assets) setAssets(data.assets);
                                 if (data.rates) setRates(data.rates);
+                                
+                                setCloudSyncStatus(isDataLoadedRef.current ? 'Update dari perangkat lain ✓' : 'Tersinkronisasi ✓');
+                                isDataLoadedRef.current = true;
+
+                                if (isDataLoadedRef.current) {
+                                    setTimeout(() => setCloudSyncStatus('Tersinkronisasi ✓'), 3000);
+                                }
                             }
+                        } else {
                             isDataLoadedRef.current = true;
-                            setCloudSyncStatus('Tersinkronisasi ✓');
+                            setCloudSyncStatus('Siap Digunakan ✓');
                         }
                     },
                     (error) => {
@@ -274,12 +289,14 @@
                 );
 
                 return () => unsubscribe();
-            }, [user]);
+            }, [user, db, appId]);
 
             // 3. Save Data (Otomatis simpan perubahan setiap kali ada transaksi/edit)
             useEffect(() => {
                 if (!user || !db || !isDataLoadedRef.current) return;
 
+                // Tandai bahwa aplikasi sedang menyimpan agar tidak ditimpa oleh data snapshot masuk
+                isSavingRef.current = true;
                 setCloudSyncStatus('Menyimpan...');
 
                 const timer = setTimeout(async () => {
@@ -290,23 +307,36 @@
                     } catch (error) {
                         console.error("Save error:", error);
                         setCloudSyncStatus('Gagal Simpan');
+                    } finally {
+                        // Beri jeda sebentar sebelum membuka kunci sinkronisasi masuk lagi
+                        setTimeout(() => { isSavingRef.current = false; }, 800);
                     }
                 }, 1000); 
 
                 return () => clearTimeout(timer);
-            }, [transactions, categories, budgets, goals, debts, assets, rates, user]);
+            }, [transactions, categories, budgets, goals, debts, assets, rates, user, db, appId]);
 
             const handleGoogleLogin = async () => {
                 if (!auth || !window.FB) return;
                 triggerHaptic(20);
                 const provider = new window.FB.GoogleAuthProvider();
+                
+                // Paksa pemilih akun muncul, berguna mengatasi beberapa bug auth popup di mobile
+                provider.setCustomParameters({ prompt: 'select_account' });
+                
                 try {
                     setCloudSyncStatus('Menyambungkan Google...');
                     isDataLoadedRef.current = false;
                     await window.FB.signInWithPopup(auth, provider);
                 } catch (err) {
                     isDataLoadedRef.current = true;
-                    setCloudSyncStatus('Gagal: ' + err.message);
+                    if (err.code === 'auth/popup-blocked') {
+                        setCloudSyncStatus('Gagal: Popup diblokir browser. Izinkan Popup.');
+                    } else if (err.code === 'auth/unauthorized-domain') {
+                        setCloudSyncStatus('Gagal: Domain tidak diizinkan di Firebase.');
+                    } else {
+                        setCloudSyncStatus('Gagal Login: Coba Refresh');
+                    }
                 }
             };
 

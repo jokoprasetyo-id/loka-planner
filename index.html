@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Loka Planner</title>
-
+    
     <!-- PWA Setup -->
-<link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#10b981">
-<link rel="apple-touch-icon" href="./icon-192x192.png">
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="apple-touch-icon" href="./icon-192x192.png">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -98,6 +98,7 @@
         const Receipt = createIcon('ph-fill ph-receipt');
         const Settings = createIcon('ph-fill ph-gear');
         const Trash2 = createIcon('ph-bold ph-trash');
+        const PencilSimple = createIcon('ph-bold ph-pencil-simple');
         const Tags = createIcon('ph-fill ph-tag');
         const BarChart3 = createIcon('ph-fill ph-chart-bar');
         const ChevronUp = createIcon('ph-bold ph-caret-up');
@@ -130,57 +131,15 @@
             debt: ['Cicilan Utang', 'Bayar Pinjaman', 'Cicilan Keyboard', 'Cicilan Digicam']
         };
 
-        const INITIAL_BUDGETS = {
-            'Makan/minum': 1500000,
-            'Bensin/Transportasi': 500000,
-            'Hangout, Jajan': 800000,
-            'Keperluan Pribadi': 500000,
-            'Belanja': 1000000,
-            'Tagihan Listrik': 52000,
-            'Internet dan Pulsa': 400000,
-        };
+        const INITIAL_BUDGETS = {};
 
-        const INITIAL_ASSETS = [
-            { id: 1, category: 'On Hand Cash', name: 'Dompet / Tunai', amount: 25000, unit: 'IDR', quantity: 25000 },
-            { id: 2, category: 'Bank Cash', name: 'Bank BRI', amount: 12500000, unit: 'IDR', quantity: 12500000 },
-            { id: 3, category: 'Bank Cash', name: 'Bank Jago', amount: 2105732, unit: 'IDR', quantity: 2105732 },
-            { id: 4, category: 'Investasi', name: 'Reksadana Pasar Uang', amount: 6475146, unit: 'IDR', quantity: 6475146 },
-            { id: 5, category: 'Investasi', name: 'Obligasi FR', amount: 13000000, unit: 'IDR', quantity: 13000000 },
-        ];
+        const INITIAL_ASSETS = [];
 
-        const INITIAL_GOALS = [
-            { 
-                id: 1, name: 'Dana Darurat (Sinking Fund)', target: 50000000, deadline: 'Desember 2026', collapsed: false,
-                assets: [
-                    { id: 101, name: 'Kas Rekening', unit: 'IDR', amount: 6500000 },
-                    { id: 102, name: 'Emas Batangan', unit: 'Emas Antam (g)', amount: 5 }
-                ] 
-            },
-            { 
-                id: 2, name: 'Liburan Tahunan', target: 10000000, deadline: 'Juli 2026', collapsed: true,
-                assets: [
-                    { id: 201, name: 'Tabungan Jago', unit: 'IDR', amount: 2000000 },
-                    { id: 202, name: 'Simpanan USD', unit: 'USD', amount: 100 }
-                ] 
-            }
-        ];
+        const INITIAL_GOALS = [];
 
-        const INITIAL_DEBTS = [
-            { id: 1, name: 'Cicilan Digicam', total: 2470000, paid: 823333, type: 'debt' },
-            { id: 2, name: 'Pinjaman KUR', total: 47688702, paid: 1521100, type: 'debt' },
-            { id: 3, name: 'Piutang Teman (Budi)', total: 500000, paid: 100000, type: 'receivable' }
-        ];
+        const INITIAL_DEBTS = [];
 
-        const INITIAL_TRANSACTIONS = [
-            { id: 1, date: '2026-02-02', description: 'Gaji Bulanan', amount: 6689997, type: 'income', category: 'Gaji' },
-            { id: 2, date: '2026-02-05', description: 'Beli Kuota Internet', amount: 150000, type: 'bills', category: 'Internet dan Pulsa' },
-            { id: 3, date: '2026-02-13', description: 'Bayar Tagihan Listrik', amount: 250000, type: 'bills', category: 'Tagihan Listrik' },
-            { id: 4, date: '2026-02-15', description: 'Makan Siang Kantor', amount: 45000, type: 'spending', category: 'Makan/minum' },
-            { id: 5, date: '2026-02-18', description: 'Bensin Motor', amount: 35000, type: 'spending', category: 'Bensin/Transportasi' },
-            { id: 6, date: '2026-02-20', description: 'Nongkrong di Cafe', amount: 120000, type: 'spending', category: 'Hangout, Jajan' },
-            { id: 7, date: '2026-02-25', description: 'Nabung Reksadana', amount: 500000, type: 'savings', category: 'Investasi Saham/Reksadana' },
-            { id: 8, date: '2026-02-28', description: 'Bayar Cicilan Laptop', amount: 823333, type: 'debt', category: 'Cicilan Utang' },
-        ];
+        const INITIAL_TRANSACTIONS = [];
 
         const UNITS = [
             'IDR', 'USD', 'SGD', 'EUR', 'AUD', 'JPY', 
@@ -252,6 +211,12 @@
             const [editingAssetId, setEditingAssetId] = useState(null);
             const [editingAsset, setEditingAsset] = useState({ name: '', category: 'Bank Cash', unit: 'IDR', quantity: '' });
             const [newAsset, setNewAsset] = useState({ name: '', category: 'Bank Cash', unit: 'IDR', quantity: '' });
+            
+            // Edit States for Debts & Transactions
+            const [newDebt, setNewDebt] = useState({ name: '', total: '', type: 'debt' });
+            const [editingDebtId, setEditingDebtId] = useState(null);
+            const [editingDebtData, setEditingDebtData] = useState({ name: '', total: '', paid: '', type: 'debt' });
+            const [editingTx, setEditingTx] = useState(null);
 
             useEffect(() => {
                 if (!window.FB) return;
@@ -590,16 +555,38 @@
                 return [...new Set(years)].sort((a, b) => b - a);
             }, [transactions]);
 
+            // --- GOALS (TABUNGAN) LOGIC ---
             const toggleGoalCollapse = (goalId) => {
                 triggerHaptic(10);
                 setGoals(goals.map(g => g.id === goalId ? { ...g, collapsed: !g.collapsed } : g));
             };
             const updateGoal = (goalId, field, value) => setGoals(goals.map(g => g.id === goalId ? { ...g, [field]: value } : g));
+            
             const addGoalAsset = (goalId) => {
                 triggerHaptic(10);
-                setGoals(goals.map(g => g.id !== goalId ? g : { ...g, assets: [...g.assets, { id: Date.now(), name: '', unit: 'IDR', amount: 0 }] }));
+                // Ditambahkan default quantity: 0 agar fix bug penjumlahan
+                setGoals(goals.map(g => g.id !== goalId ? g : { ...g, assets: [...g.assets, { id: Date.now(), name: '', unit: 'IDR', amount: 0, quantity: 0 }] }));
             };
-            const updateGoalAsset = (goalId, assetId, field, value) => setGoals(goals.map(g => g.id !== goalId ? g : { ...g, assets: g.assets.map(a => a.id === assetId ? { ...a, [field]: value } : a) }));
+            
+            const updateGoalAsset = (goalId, assetId, field, value) => {
+                setGoals(goals.map(g => {
+                    if (g.id !== goalId) return g;
+                    return {
+                        ...g,
+                        assets: g.assets.map(a => {
+                            if (a.id !== assetId) return a;
+                            
+                            const updatedAsset = { ...a, [field]: value };
+                            // Menyatukan logic sinkronisasi kuantitas dan nominal dalam satu update
+                            if (field === 'quantity') updatedAsset.amount = value;
+                            if (field === 'amount') updatedAsset.quantity = value;
+                            
+                            return updatedAsset;
+                        })
+                    };
+                }));
+            };
+            
             const removeGoalAsset = (goalId, assetId) => {
                 triggerHaptic(10);
                 setGoals(goals.map(g => g.id !== goalId ? g : { ...g, assets: g.assets.filter(a => a.id !== assetId) }));
@@ -790,16 +777,24 @@
                                             {t.type === 'income' ? '+' : '-'}{displayMoney(t.amount)}
                                         </td>
                                         <td className="p-4 text-center">
-                                            <button
-                                                onClick={() => {
-                                                    triggerHaptic(15);
-                                                    setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id));
-                                                }}
-                                                className="p-1.5 bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors"
-                                                title="Hapus Transaksi"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            <div className="flex items-center justify-center gap-1.5">
+                                                {/* TOMBOL EDIT TRANSAKSI */}
+                                                <button
+                                                    onClick={() => { triggerHaptic(15); setEditingTx(t); setIsAddModalOpen(true); }}
+                                                    className="p-1.5 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                                    title="Edit Transaksi"
+                                                >
+                                                    <PencilSimple className="w-4 h-4" />
+                                                </button>
+                                                {/* TOMBOL HAPUS TRANSAKSI */}
+                                                <button
+                                                    onClick={() => { triggerHaptic(15); setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id)); }}
+                                                    className="p-1.5 bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+                                                    title="Hapus Transaksi"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -885,7 +880,7 @@
                             <div className="space-y-6">
                                 <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm mb-6 flex justify-between items-center">
                                     <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-                                        <Target className="w-5 h-5 text-indigo-500" /> Tujuan & Sinking Funds
+                                        <Target className="w-5 h-5 text-indigo-500" /> Tabungan
                                     </h3>
                                 </div>
 
@@ -971,9 +966,8 @@
                                                                                     className="w-24 bg-transparent text-right text-sm font-bold outline-none px-2 py-1.5"
                                                                                     value={privacyMode ? "12345678" : (asset.quantity !== undefined ? asset.quantity : asset.amount)}
                                                                                     onChange={(e) => {
-                                                                                        const val = e.target.value;
-                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', val);
-                                                                                        updateGoalAsset(goal.id, asset.id, 'amount', val);
+                                                                                        // Penyesuaian agar logic input memanggil update yang tersinkronisasi
+                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', e.target.value);
                                                                                     }}
                                                                                     placeholder="0"
                                                                                 />
@@ -991,7 +985,7 @@
                                                                                 </div>
                                                                             )}
                                                                         </div>
-                                                                        <button onClick={() => removeGoalAsset(goal.id, asset.id)} className="p-2 bg-rose-50 text-rose-500 rounded-lg">
+                                                                        <button onClick={() => removeGoalAsset(goal.id, asset.id)} className="p-2 bg-rose-50 text-rose-500 rounded-lg border border-transparent hover:border-rose-200 transition-colors shadow-sm">
                                                                             <Trash2 className="w-4 h-4" />
                                                                         </button>
                                                                     </div>
@@ -1019,30 +1013,152 @@
                                 </h3>
                                 <div className="space-y-4">
                                     {debts.map(debt => {
+                                        const isEditing = editingDebtId === debt.id;
                                         const sisa = debt.total - debt.paid;
                                         const isDebt = debt.type === 'debt';
+                                        
                                         return (
                                             <div key={debt.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 relative">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <h4 className="font-bold text-slate-800 text-sm">{debt.name}</h4>
-                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide ${isDebt ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                        {isDebt ? 'Hutang' : 'Piutang'}
-                                                    </span>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
-                                                    <div className="bg-white p-2 rounded-lg border border-slate-100">
-                                                        <span className="block text-[11px] text-slate-500 font-medium mb-1">Total {isDebt ? 'Pinjaman' : 'Diberikan'}</span>
-                                                        <span className="font-black text-slate-800">{displayMoney(debt.total)}</span>
+                                                {isEditing ? (
+                                                    // MODE EDIT HUTANG/PIUTANG
+                                                    <div className="space-y-3">
+                                                        <input 
+                                                            type="text" 
+                                                            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
+                                                            value={editingDebtData.name} 
+                                                            onChange={e => setEditingDebtData({...editingDebtData, name: e.target.value})} 
+                                                            placeholder="Nama Catatan" 
+                                                        />
+                                                        <select 
+                                                            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
+                                                            value={editingDebtData.type} 
+                                                            onChange={e => setEditingDebtData({...editingDebtData, type: e.target.value})}
+                                                        >
+                                                            <option value="debt">Hutang (Meminjam)</option>
+                                                            <option value="receivable">Piutang (Beri Pinjaman)</option>
+                                                        </select>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div>
+                                                                <label className="text-[10px] text-slate-500 font-bold block mb-1">Total {editingDebtData.type === 'debt' ? 'Pinjaman' : 'Diberikan'}</label>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
+                                                                    value={editingDebtData.total} 
+                                                                    onChange={e => setEditingDebtData({...editingDebtData, total: e.target.value})} 
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] text-slate-500 font-bold block mb-1">Sudah Dibayar</label>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
+                                                                    value={editingDebtData.paid} 
+                                                                    onChange={e => setEditingDebtData({...editingDebtData, paid: e.target.value})} 
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-end gap-2 mt-2">
+                                                            <button 
+                                                                onClick={() => { 
+                                                                    triggerHaptic(20); 
+                                                                    setDebts(debts.map(d => d.id === debt.id ? { ...editingDebtData, id: debt.id, total: Number(editingDebtData.total), paid: Number(editingDebtData.paid) } : d)); 
+                                                                    setEditingDebtId(null); 
+                                                                }} 
+                                                                className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold"
+                                                            >
+                                                                Simpan
+                                                            </button>
+                                                            <button onClick={() => setEditingDebtId(null)} className="px-3 py-1.5 bg-slate-300 text-slate-700 rounded-lg text-xs font-bold">Batal</button>
+                                                        </div>
                                                     </div>
-                                                    <div className="bg-white p-2 rounded-lg border border-slate-100">
-                                                        <span className="block text-[11px] text-slate-500 font-medium mb-1">Sisa {isDebt ? 'Hutang' : 'Tagihan'}</span>
-                                                        <span className={`font-black ${isDebt ? 'text-rose-600' : 'text-emerald-600'}`}>{displayMoney(sisa)}</span>
-                                                    </div>
-                                                </div>
+                                                ) : (
+                                                    // MODE NORMAL TAMPILAN
+                                                    <>
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight">{debt.name}</h4>
+                                                                <span className={`w-fit text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide ${isDebt ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                                    {isDebt ? 'Hutang' : 'Piutang'}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            <div className="flex gap-1.5">
+                                                                {/* TOMBOL EDIT */}
+                                                                <button
+                                                                    onClick={() => { 
+                                                                        triggerHaptic(10); 
+                                                                        setEditingDebtId(debt.id); 
+                                                                        setEditingDebtData({ name: debt.name, type: debt.type, total: debt.total, paid: debt.paid }); 
+                                                                    }}
+                                                                    className="p-1.5 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 rounded-lg border border-slate-200 transition-colors shadow-sm"
+                                                                    title="Edit Catatan"
+                                                                >
+                                                                    <PencilSimple className="w-4 h-4" />
+                                                                </button>
+                                                                {/* TOMBOL HAPUS */}
+                                                                <button
+                                                                    onClick={() => { triggerHaptic(15); setDebts(debts.filter(d => d.id !== debt.id)); }}
+                                                                    className="p-1.5 bg-white text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg border border-slate-200 transition-colors shadow-sm"
+                                                                    title="Hapus Catatan"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
+                                                            <div className="bg-white p-2 rounded-lg border border-slate-100">
+                                                                <span className="block text-[11px] text-slate-500 font-medium mb-1">Total {isDebt ? 'Pinjaman' : 'Diberikan'}</span>
+                                                                <span className="font-black text-slate-800">{displayMoney(debt.total)}</span>
+                                                            </div>
+                                                            <div className="bg-white p-2 rounded-lg border border-slate-100">
+                                                                <span className="block text-[11px] text-slate-500 font-medium mb-1">Sisa {isDebt ? 'Hutang' : 'Tagihan'}</span>
+                                                                <span className={`font-black ${isDebt ? 'text-rose-600' : 'text-emerald-600'}`}>{displayMoney(sisa)}</span>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         );
                                     })}
                                     {debts.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada catatan hutang/piutang.</p>}
+                                </div>
+                                
+                                {/* FORM TAMBAH HUTANG/PIUTANG BARU */}
+                                <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100">
+                                    <p className="text-xs font-bold text-slate-500 mb-2">Tambah Catatan Baru</p>
+                                    <div className="flex flex-col gap-2">
+                                        <input 
+                                            type="text" placeholder="Nama / Keterangan (Contoh: Cicilan Motor)" 
+                                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold w-full outline-none focus:border-indigo-400" 
+                                            value={newDebt.name} onChange={e => setNewDebt({...newDebt, name: e.target.value})} 
+                                        />
+                                        <div className="flex gap-2">
+                                            <select 
+                                                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold w-1/2 outline-none focus:border-indigo-400" 
+                                                value={newDebt.type} onChange={e => setNewDebt({...newDebt, type: e.target.value})}
+                                            >
+                                                <option value="debt">Hutang (Meminjam)</option>
+                                                <option value="receivable">Piutang (Beri Pinjaman)</option>
+                                            </select>
+                                            <input 
+                                                type="number" placeholder="Total (Rp)" 
+                                                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold w-1/2 outline-none focus:border-indigo-400" 
+                                                value={newDebt.total} onChange={e => setNewDebt({...newDebt, total: e.target.value})} 
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => { 
+                                                if(newDebt.name && newDebt.total) { 
+                                                    triggerHaptic(20); 
+                                                    setDebts([...debts, { id: Date.now(), name: newDebt.name, total: Number(newDebt.total), paid: 0, type: newDebt.type }]); 
+                                                    setNewDebt({ name: '', total: '', type: 'debt' }); 
+                                                }
+                                            }} 
+                                            className="w-full bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl font-bold text-sm mt-1 flex justify-center items-center gap-1 transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4"/> Tambah Catatan
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1430,8 +1546,18 @@
                     {isAddModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex justify-center items-end md:items-center p-0 md:p-4 animate-in fade-in">
                             <TransactionForm 
-                                onClose={() => { triggerHaptic(10); setIsAddModalOpen(false); }} 
-                                onSave={(newTx) => { triggerHaptic(25); setTransactions(prev => [{ ...newTx, id: Date.now() }, ...prev]); setIsAddModalOpen(false); }} 
+                                initialData={editingTx}
+                                onClose={() => { triggerHaptic(10); setIsAddModalOpen(false); setEditingTx(null); }} 
+                                onSave={(newTx, editId) => { 
+                                    triggerHaptic(25); 
+                                    if(editId) {
+                                        setTransactions(prev => prev.map(t => t.id === editId ? { ...newTx, id: editId } : t));
+                                    } else {
+                                        setTransactions(prev => [{ ...newTx, id: Date.now() }, ...prev]); 
+                                    }
+                                    setIsAddModalOpen(false); 
+                                    setEditingTx(null);
+                                }} 
                                 categories={categories}
                             />
                         </div>
@@ -1440,22 +1566,31 @@
             );
         }
 
-        function TransactionForm({ onClose, onSave, categories }) {
+        function TransactionForm({ onClose, onSave, categories, initialData }) {
             const { useState } = React;
-            const [type, setType] = useState('spending');
-            const [amount, setAmount] = useState('');
-            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-            const [category, setCategory] = useState(categories.spending[0] || '');
-            const [description, setDescription] = useState('');
+            
+            // Set input dengan data yang sedang diedit (jika ada)
+            const [type, setType] = useState(initialData?.type || 'spending');
+            const [amount, setAmount] = useState(initialData?.amount || '');
+            const [date, setDate] = useState(initialData?.date || new Date().toISOString().split('T')[0]);
+            
+            // Pastikan category yang diset ada di dalam list yang aktif, jika tidak pilih yang pertama
+            const defaultCategory = (categories[initialData?.type || 'spending'] || [])[0] || '';
+            const [category, setCategory] = useState(initialData?.category || defaultCategory);
+            
+            const [description, setDescription] = useState(initialData?.description || '');
 
             const handleTypeChange = (newType) => {
-                triggerHaptic(10); setType(newType); setCategory(categories[newType][0] || '');
+                triggerHaptic(10); 
+                setType(newType); 
+                setCategory(categories[newType][0] || '');
             };
 
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!amount || !description) return;
-                onSave({ type, amount: Number(amount), date, category, description });
+                // Sertakan ID lama saat melakukan Save agar bisa ditimpa
+                onSave({ type, amount: Number(amount), date, category, description }, initialData?.id);
             };
 
             const TYPE_OPTIONS = [
@@ -1466,7 +1601,9 @@
             return (
                 <div className="bg-white w-full max-w-lg rounded-t-[2rem] md:rounded-[2rem] shadow-2xl animate-in slide-in-from-bottom-full md:slide-in-bottom">
                     <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50 rounded-t-[2rem]">
-                        <h3 className="text-xl font-black text-slate-800">Catat Transaksi</h3>
+                        <h3 className="text-xl font-black text-slate-800">
+                            {initialData ? 'Edit Transaksi' : 'Catat Transaksi'}
+                        </h3>
                         <button onClick={onClose} className="text-slate-400 hover:text-slate-700 bg-white shadow-sm border border-slate-200 p-2 rounded-full"><X className="w-5 h-5" /></button>
                     </div>
                     
@@ -1509,7 +1646,7 @@
                         </div>
 
                         <button type="submit" className="w-full bg-emerald-600 text-white font-black text-lg py-4 rounded-2xl flex justify-center items-center gap-2 mt-4">
-                            <Plus className="w-5 h-5" /> Simpan Transaksi
+                            <Plus className="w-5 h-5" /> {initialData ? 'Simpan Perubahan' : 'Simpan Transaksi'}
                         </button>
                     </form>
                 </div>
@@ -1531,14 +1668,21 @@
             setTimeout(initApp, 1000);
         }
     </script>
-
-// --- PWA Service Worker Registration ---
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then((reg) => console.log('Service Worker Registered Sukses!', reg.scope))
-            .catch((err) => console.error('Service Worker Registration Gagal!', err));
-    });
-}
+    
+    <!-- --- PWA Service Worker Registration --- -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // HANYA pasang PWA jika berjalan di server HTTP/HTTPS yang sah (mencegah error di preview/file lokal)
+                if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+                    navigator.serviceWorker.register('./sw.js')
+                        .then((reg) => console.log('Service Worker Registered Sukses!', reg.scope))
+                        .catch((err) => console.error('Service Worker Registration Gagal!', err));
+                } else {
+                    console.log('Mode Pratinjau/Lokal: Registrasi PWA dilewati untuk mencegah error.');
+                }
+            });
+        }
+    </script>
 </body>
 </html>

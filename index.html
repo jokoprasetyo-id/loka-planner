@@ -288,7 +288,13 @@
                             if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
                                 await window.FB.signInWithCustomToken(initializedAuth, window.__initial_auth_token);
                             } else {
-                                await window.FB.signInAnonymously(initializedAuth);
+                                // TUNGGU FIREBASE MENGECEK SESI GOOGLE SEBELUMNYA
+                                await initializedAuth.authStateReady(); 
+                                
+                                // JIKA BELUM ADA SESI SAMA SEKALI, BARU BUAT AKUN LOKAL/ANONIM
+                                if (!initializedAuth.currentUser) {
+                                    await window.FB.signInAnonymously(initializedAuth);
+                                }
                             }
                         } catch (e) { 
                             console.error("Auth init error:", e);
@@ -307,8 +313,8 @@
                             setUser(currentUser);
                             setCloudSyncStatus(
                                 currentUser.isAnonymous 
-                                    ? 'Mode Lokal (Memuat...)' 
-                                    : 'Tersambung Akun Google'
+                                    ? 'Mode Lokal Aktif' 
+                                    : 'Tersambung Akun Google ✓'
                             );
                         } else {
                              setUser(null);

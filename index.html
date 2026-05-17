@@ -546,6 +546,30 @@
                 return Object.entries(grouped).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
             }, [filteredTransactions]);
 
+            // ==========================================
+            // LOGIKA BUDGET & RENCANA BARU
+            // ==========================================
+            
+            // 1. Kumpulkan semua realisasi arus keluar (spending, bills, savings, debt)
+            const budgetRealization = useMemo(() => {
+                const outflows = filteredTransactions.filter(t => ['spending', 'bills', 'savings', 'debt'].includes(t.type));
+                return outflows.reduce((acc, t) => {
+                    acc[t.category] = (acc[t.category] || 0) + t.amount;
+                    return acc;
+                }, {});
+            }, [filteredTransactions]);
+
+            // 2. Pisahkan data per kategori Budget
+            const spendingBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.spending?.includes(cat) || (!categories.bills?.includes(cat) && !categories.savings?.includes(cat) && !categories.debt?.includes(cat))), [budgets, categories]);
+            const billsBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.bills?.includes(cat)), [budgets, categories]);
+            const savingsBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.savings?.includes(cat)), [budgets, categories]);
+            const debtBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.debt?.includes(cat)), [budgets, categories]);
+
+            // 3. Totalkan Semua Set Budget vs Realisasi
+            const totalBudgetSet = useMemo(() => Object.values(budgets).reduce((sum, limit) => sum + limit, 0), [budgets]);
+            const totalBudgetSpent = useMemo(() => Object.keys(budgets).reduce((sum, cat) => sum + (budgetRealization[cat] || 0), 0), [budgets, budgetRealization]);
+            const totalBills = useMemo(() => filteredTransactions.filter(t => t.type === 'bills').reduce((sum, t) => sum + t.amount, 0), [filteredTransactions]);
+
             const getAssetValueInIDR = (asset) => {
                 if (!asset.unit || asset.unit === 'IDR') return asset.quantity !== undefined ? asset.quantity : asset.amount;
                 const rate = rates[asset.unit] || 1;
@@ -563,6 +587,10 @@
             const totalDebtAmount = useMemo(() => debts.reduce((sum, d) => sum + (d.type === 'debt' ? d.total - d.paid : 0), [debts]));
             const totalGrossWealth = totalGeneralAssets + totalGoalsAssets;
             const totalNetWorth = totalGrossWealth - totalDebtAmount;
+            
+            // Rekapitulasi Hutang Piutang
+            const totalSisaHutang = useMemo(() => debts.filter(d => d.type === 'debt').reduce((sum, d) => sum + (d.total - d.paid), 0), [debts]);
+            const totalSisaPiutang = useMemo(() => debts.filter(d => d.type === 'receivable').reduce((sum, d) => sum + (d.total - d.paid), 0), [debts]);
 
             const assetRecap = useMemo(() => {
                 const recap = {};
@@ -583,14 +611,6 @@
                 const years = (transactions || []).map(t => new Date(t.date).getFullYear());
                 return [...new Set(years)].sort((a, b) => b - a);
             }, [transactions]);
-
-            const totalBudgetSet = useMemo(() => Object.values(budgets).reduce((sum, limit) => sum + limit, 0), [budgets]);
-            const totalBudgetSpent = useMemo(() => Object.keys(budgets).reduce((sum, cat) => sum + (categorySpending.find(c => c.name === cat)?.amount || 0), 0), [budgets, categorySpending]);
-            const totalBills = useMemo(() => filteredTransactions.filter(t => t.type === 'bills').reduce((sum, t) => sum + t.amount, 0), [filteredTransactions]);
-
-            // Splitting Budgets for UI Planer Tab
-            const spendingBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.spending.includes(cat) || (!categories.spending.includes(cat) && !categories.bills.includes(cat))), [budgets, categories]);
-            const billsBudgets = useMemo(() => Object.entries(budgets).filter(([cat]) => categories.bills.includes(cat)), [budgets, categories]);
 
             // --- GOALS (TABUNGAN) LOGIC ---
             const toggleGoalCollapse = (goalId) => {
@@ -845,20 +865,20 @@
             const renderPlanner = () => (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="flex bg-slate-200/50 p-1.5 rounded-xl w-full md:w-fit mx-auto md:mx-0 overflow-x-auto hide-scrollbar">
-                        <button onClick={() => handlePlannerTabChange('budget')} className={`whitespace-nowrap flex-1 md:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${plannerTab === 'budget' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-800'}`}>Budget & Tagihan</button>
-                        <button onClick={() => handlePlannerTabChange('goals')} className={`whitespace-nowrap flex-1 md:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${plannerTab === 'goals' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Tujuan & Hutang</button>
+                        <button onClick={() => handlePlannerTabChange('budget')} className={`whitespace-nowrap flex-1 md:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${plannerTab === 'budget' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-800'}`}>Rencana Cashflow</button>
+                        <button onClick={() => handlePlannerTabChange('goals')} className={`whitespace-nowrap flex-1 md:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${plannerTab === 'goals' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Tujuan & Catatan</button>
                     </div>
 
                     {plannerTab === 'budget' && (
                         <div className="space-y-6 animate-in slide-in-from-right-8">
-                            {/* NEW: Top Unified Header Summary */}
+                            {/* Top Unified Header Summary */}
                             <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
                                 <div className="absolute -right-6 -top-6 opacity-5 pointer-events-none">
                                     <PieChart className="w-48 h-48 -rotate-12" />
                                 </div>
                                 <div className="relative z-10">
                                     <p className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-1 flex items-center gap-1.5">
-                                        <Target className="w-4 h-4 text-emerald-400" /> Total Rencana Pengeluaran & Tagihan
+                                        <Target className="w-4 h-4 text-emerald-400" /> Total Rencana Keseluruhan
                                     </p>
                                     <h3 className="text-3xl md:text-4xl font-black">{displayMoney(totalBudgetSet)}</h3>
                                 </div>
@@ -869,96 +889,135 @@
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* KIRI: Budget Kebutuhan */}
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
-                                    <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
-                                        <PieChart className="w-5 h-5 text-rose-500" /> Budget Kebutuhan
-                                    </h3>
-                                    
-                                    <div className="space-y-6">
-                                        {spendingBudgets.map(([category, limit]) => {
-                                            const spent = categorySpending.find(c => c.name === category)?.amount || 0;
-                                            const percentage = Math.min(100, (spent / limit) * 100);
-                                            const isOver = spent > limit;
-                                            
-                                            return (
-                                                <div key={category}>
-                                                    <div className="flex justify-between text-sm mb-2">
-                                                        <span className="font-bold text-slate-700">{category}</span>
-                                                        <span className="text-slate-500 font-medium">
-                                                            <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
-                                                        </span>
+                                {/* KOLOM KIRI */}
+                                <div className="space-y-6">
+                                    {/* Budget Kebutuhan */}
+                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                        <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                            <PieChart className="w-5 h-5 text-rose-500" /> Budget Kebutuhan
+                                        </h3>
+                                        <div className="space-y-6">
+                                            {spendingBudgets.map(([category, limit]) => {
+                                                const spent = budgetRealization[category] || 0;
+                                                const percentage = Math.min(100, (spent / limit) * 100);
+                                                const isOver = spent > limit;
+                                                
+                                                return (
+                                                    <div key={category}>
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="font-bold text-slate-700">{category}</span>
+                                                            <span className="text-slate-500 font-medium">
+                                                                <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                            <div 
+                                                                className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                                                                style={{ width: `${percentage}%` }}
+                                                            ></div>
+                                                        </div>
+                                                        {isOver && <p className="text-xs font-bold text-rose-500 mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5"/> Over budget!</p>}
                                                     </div>
-                                                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                                                        <div 
-                                                            className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                                                            style={{ width: `${percentage}%` }}
-                                                        ></div>
+                                                );
+                                            })}
+                                            {spendingBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana budget kebutuhan.</p>}
+                                        </div>
+                                    </div>
+
+                                    {/* Rencana Tabungan */}
+                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                        <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                            <PiggyBank className="w-5 h-5 text-indigo-500" /> Rencana Tabungan
+                                        </h3>
+                                        <div className="space-y-6">
+                                            {savingsBudgets.map(([category, limit]) => {
+                                                const spent = budgetRealization[category] || 0;
+                                                const percentage = Math.min(100, (spent / limit) * 100);
+                                                
+                                                return (
+                                                    <div key={category}>
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="font-bold text-slate-700">{category}</span>
+                                                            <span className="text-slate-500 font-medium">
+                                                                <span className="text-slate-800 font-bold">{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                            <div 
+                                                                className={`h-full rounded-full transition-all ${percentage >= 100 ? 'bg-emerald-400' : 'bg-indigo-400'}`}
+                                                                style={{ width: `${percentage}%` }}
+                                                            ></div>
+                                                        </div>
                                                     </div>
-                                                    {isOver && <p className="text-xs font-bold text-rose-500 mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5"/> Over budget!</p>}
-                                                </div>
-                                            );
-                                        })}
-                                        {spendingBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada budget kebutuhan.</p>}
+                                                );
+                                            })}
+                                            {savingsBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana target tabungan.</p>}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* KANAN: Rencana Tagihan & Langganan */}
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
-                                    <div className="flex justify-between items-start mb-6">
-                                        <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                                {/* KOLOM KANAN */}
+                                <div className="space-y-6">
+                                    {/* Rencana Tagihan */}
+                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                        <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
                                             <Receipt className="w-5 h-5 text-orange-500" /> Rencana Tagihan
                                         </h3>
-                                        <div className="text-right bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100">
-                                            <p className="text-[10px] text-orange-600 font-bold uppercase">Total Dibayar</p>
-                                            <p className="text-sm font-black text-orange-700">{displayMoney(totalBills)}</p>
+                                        <div className="space-y-6">
+                                            {billsBudgets.map(([category, limit]) => {
+                                                const spent = budgetRealization[category] || 0;
+                                                const percentage = Math.min(100, (spent / limit) * 100);
+                                                const isOver = spent > limit;
+                                                
+                                                return (
+                                                    <div key={category}>
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="font-bold text-slate-700">{category}</span>
+                                                            <span className="text-slate-500 font-medium">
+                                                                <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                            <div 
+                                                                className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage >= 100 ? 'bg-emerald-400' : 'bg-orange-400'}`}
+                                                                style={{ width: `${percentage}%` }}
+                                                            ></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {billsBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana tagihan terdaftar.</p>}
                                         </div>
                                     </div>
-                                    
-                                    {/* Progress Bars Khusus Tagihan yang Di-budget-kan */}
-                                    <div className="space-y-6 mb-8">
-                                        {billsBudgets.map(([category, limit]) => {
-                                            const spent = categorySpending.find(c => c.name === category)?.amount || 0;
-                                            const percentage = Math.min(100, (spent / limit) * 100);
-                                            const isOver = spent > limit;
-                                            
-                                            return (
-                                                <div key={category}>
-                                                    <div className="flex justify-between text-sm mb-2">
-                                                        <span className="font-bold text-slate-700">{category}</span>
-                                                        <span className="text-slate-500 font-medium">
-                                                            <span className={isOver ? 'text-rose-600 font-bold' : 'text-slate-800 font-bold'}>{displayMoney(spent)}</span> / {displayMoney(limit)}
-                                                        </span>
-                                                    </div>
-                                                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                                                        <div 
-                                                            className={`h-full rounded-full transition-all ${isOver ? 'bg-rose-500' : percentage >= 100 ? 'bg-emerald-400' : 'bg-orange-400'}`}
-                                                            style={{ width: `${percentage}%` }}
-                                                        ></div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                        {billsBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana tagihan.</p>}
-                                    </div>
 
-                                    {/* List Riwayat Tagihan Terbaru */}
-                                    <div className="border-t border-slate-100 pt-6">
-                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Riwayat Tagihan Terakhir</h4>
-                                        <div className="space-y-4">
-                                            {filteredTransactions.filter(t => t.type === 'bills').length > 0 ? (
-                                                filteredTransactions.filter(t => t.type === 'bills').map(t => (
-                                                    <div key={t.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                                                        <div>
-                                                            <p className="font-bold text-slate-800 text-sm">{t.description}</p>
-                                                            <p className="text-xs text-slate-500 font-medium mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</p>
+                                    {/* Rencana Cicilan Hutang */}
+                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
+                                        <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                            <CreditCard className="w-5 h-5 text-amber-500" /> Rencana Cicilan
+                                        </h3>
+                                        <div className="space-y-6">
+                                            {debtBudgets.map(([category, limit]) => {
+                                                const spent = budgetRealization[category] || 0;
+                                                const percentage = Math.min(100, (spent / limit) * 100);
+                                                
+                                                return (
+                                                    <div key={category}>
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="font-bold text-slate-700">{category}</span>
+                                                            <span className="text-slate-500 font-medium">
+                                                                <span className="text-slate-800 font-bold">{displayMoney(spent)}</span> / {displayMoney(limit)}
+                                                            </span>
                                                         </div>
-                                                        <span className="font-black text-slate-800">{displayMoney(t.amount)}</span>
+                                                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                                            <div 
+                                                                className={`h-full rounded-full transition-all ${percentage >= 100 ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                                                                style={{ width: `${percentage}%` }}
+                                                            ></div>
+                                                        </div>
                                                     </div>
-                                                ))
-                                            ) : (
-                                                <p className="text-slate-400 font-medium text-sm text-center py-4">Belum ada tagihan terbayar periode ini.</p>
-                                            )}
+                                                );
+                                            })}
+                                            {debtBudgets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada rencana cicilan hutang.</p>}
                                         </div>
                                     </div>
                                 </div>
@@ -968,6 +1027,7 @@
 
                     {plannerTab === 'goals' && (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-left-8">
+                            {/* TABUNGAN SECTION */}
                             <div className="space-y-6">
                                 <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm mb-6 flex justify-between items-center">
                                     <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -1103,10 +1163,24 @@
                                 </button>
                             </div>
 
+                            {/* HUTANG & PIUTANG SECTION */}
                             <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm h-fit">
-                                <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                <h3 className="text-xl font-bold flex items-center gap-2 mb-4 text-slate-800">
                                     <CreditCard className="w-5 h-5 text-rose-500" /> Hutang & Piutang
                                 </h3>
+                                
+                                {/* REKAP TOTAL HUTANG PIUTANG */}
+                                <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                                    <div className="flex-1 bg-rose-50 border border-rose-100 rounded-xl p-3 flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-rose-600 uppercase">Sisa Hutang Keseluruhan</span>
+                                        <span className="font-black text-rose-700">{displayMoney(totalSisaHutang)}</span>
+                                    </div>
+                                    <div className="flex-1 bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-emerald-600 uppercase">Sisa Piutang Keseluruhan</span>
+                                        <span className="font-black text-emerald-700">{displayMoney(totalSisaPiutang)}</span>
+                                    </div>
+                                </div>
+
                                 <div className="space-y-4">
                                     {debts.map(debt => {
                                         const isEditing = editingDebtId === debt.id;
@@ -1364,7 +1438,7 @@
                                 {[
                                     { id: 'account', label: 'Akun & Sync' },
                                     { id: 'categories', label: 'Kategori Cashflow' },
-                                    { id: 'budgets', label: 'Limit Budget' },
+                                    { id: 'budgets', label: 'Rencana Bulanan' },
                                     { id: 'assets', label: 'Rekening Utama' },
                                     { id: 'rates', label: 'Nilai Tukar Valas' },
                                 ].map(tab => (
@@ -1473,7 +1547,7 @@
 
                             {settingsTab === 'budgets' && (
                                 <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-rose-500"/> Atur Budget Bulanan</h3>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-rose-500"/> Atur Rencana Pengeluaran Bulanan</h3>
                                     <div className="space-y-3 mb-8">
                                         {Object.entries(budgets).map(([cat, limit]) => {
                                             const isEditing = editingBudgetCat === cat;
@@ -1507,7 +1581,18 @@
                                     <div className="border-t border-slate-100 pt-6 flex flex-col md:flex-row gap-3">
                                         <select className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 flex-1" value={newBudgetCat} onChange={e => setNewBudgetCat(e.target.value)}>
                                             <option value="">-- Pilih Kategori --</option>
-                                            {[...categories.spending, ...categories.bills].map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            <optgroup label="Kebutuhan (Spending)">
+                                                {(categories.spending || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            </optgroup>
+                                            <optgroup label="Tagihan (Bills)">
+                                                {(categories.bills || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            </optgroup>
+                                            <optgroup label="Tabungan (Savings)">
+                                                {(categories.savings || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            </optgroup>
+                                            <optgroup label="Hutang (Debt)">
+                                                {(categories.debt || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            </optgroup>
                                         </select>
                                         <input 
                                             type="text" inputMode="numeric" placeholder="Nominal Limit (Rp)" 

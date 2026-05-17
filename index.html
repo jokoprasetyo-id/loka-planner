@@ -211,6 +211,7 @@
             // Firebase & Sync States
             const [user, setUser] = useState(null);
             const [cloudSyncStatus, setCloudSyncStatus] = useState('Menunggu Inisialisasi...');
+            const [isSyncError, setIsSyncError] = useState(false);
             const [appId, setAppId] = useState("lokaplanner-finance-app");
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
@@ -229,7 +230,7 @@
             const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
             // Data States
-            const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
+            const [transactions, setTransactions] = useState([]); // Awal kosong agar tidak overwrite cloud
             const [categories, setCategories] = useState(INITIAL_CATEGORIES);
             const [budgets, setBudgets] = useState(INITIAL_BUDGETS);
             const [goals, setGoals] = useState(INITIAL_GOALS);
@@ -250,7 +251,7 @@
             useEffect(() => {
                 if (!window.FB) return;
 
-                // Memperbarui ke Firebase Konfigurasi yang baru
+                // Konfigurasi Firebase yang baru (lokaplanner-finance)
                 const MY_FIREBASE_CONFIG = {
                     apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
                     authDomain: "lokaplanner-finance.firebaseapp.com",
@@ -283,6 +284,7 @@
                     const initAuth = async () => {
                         try {
                             setCloudSyncStatus('Mengecek koneksi...');
+                            setIsSyncError(false);
                             if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
                                 await window.FB.signInWithCustomToken(initializedAuth, window.__initial_auth_token);
                             } else {
@@ -291,6 +293,9 @@
                         } catch (e) { 
                             console.error("Auth init error:", e);
                             setCloudSyncStatus('Mode Lokal Aktif');
+                            setIsSyncError(true);
+                            // Jika gagal login, muat data dummy
+                            setTransactions(INITIAL_TRANSACTIONS);
                             isDataLoadedRef.current = true; 
                         }
                     };
@@ -302,9 +307,12 @@
                             setUser(currentUser);
                             setCloudSyncStatus(
                                 currentUser.isAnonymous 
-                                    ? 'Mode Lokal (Tersimpan di Cloud Platform)' 
+                                    ? 'Mode Lokal (Memuat...)' 
                                     : 'Tersambung Akun Google'
                             );
+                        } else {
+                             setUser(null);
+                             setTransactions(INITIAL_TRANSACTIONS);
                         }
                     });
 
@@ -313,6 +321,8 @@
                 } catch (error) {
                     console.error("Firebase init failed:", error);
                     setCloudSyncStatus('Gagal terhubung ke Cloud');
+                    setIsSyncError(true);
+                    setTransactions(INITIAL_TRANSACTIONS);
                     isDataLoadedRef.current = true;
                 }
             }, []);
@@ -320,9 +330,9 @@
             useEffect(() => {
                 if (!user || !db || !window.FB) return;
 
-                // Path yang valid sesuai aturan: artifacts/{appId}/users/{userId}/...
                 const docRef = window.FB.doc(db, 'artifacts', appId, 'users', user.uid, 'appData', 'state');
-                setCloudSyncStatus('Memuat data...');
+                setCloudSyncStatus('Mengunduh data...');
+                setIsSyncError(false);
 
                 const applyCloudData = (data) => {
                     if (data.transactions) setTransactions(data.transactions);
@@ -341,14 +351,20 @@
                         if (docSnap.metadata.hasPendingWrites) return;
 
                         if (!isDataLoadedRef.current) {
-                            if (docSnap.exists()) applyCloudData(docSnap.data());
-                            isDataLoadedRef.current = true;
-                            setCloudSyncStatus('Tersinkronisasi ✓');
-                        } else if (!isSavingRef.current && !docSnap.metadata.fromCache) {
-                            // Mencegah cloud override saat sedang mengedit data secara lokal (Race condition fix)
                             if (docSnap.exists()) {
                                 applyCloudData(docSnap.data());
-                                setCloudSyncStatus('Disinkronkan dari perangkat lain ✓');
+                            } else {
+                                // Jika tidak ada data di cloud (pengguna baru), simpan INITIAL
+                                setTransactions(INITIAL_TRANSACTIONS);
+                            }
+                            isDataLoadedRef.current = true;
+                            setCloudSyncStatus('Tersinkronisasi ✓');
+                            setIsSyncError(false);
+                        } else if (!isSavingRef.current && !docSnap.metadata.fromCache) {
+                            if (docSnap.exists()) {
+                                applyCloudData(docSnap.data());
+                                setCloudSyncStatus('Update dari perangkat lain ✓');
+                                setIsSyncError(false);
                                 setTimeout(() => setCloudSyncStatus('Tersinkronisasi ✓'), 3000);
                             }
                         }
@@ -356,7 +372,19 @@
                     (error) => {
                         console.error("Realtime listener error:", error);
                         isDataLoadedRef.current = true;
-                        setCloudSyncStatus('Mode Lokal Aktif');
+                        setIsSyncError(true);
+                        
+                        // Error yang sangat spesifik agar tahu letak masalah
+                        if (error.code === 'permission-denied') {
+                            setCloudSyncStatus('Gagal: Akses Firestore Ditolak (Cek Rules)');
+                        } else if (error.code === 'unavailable') {
+                            setCloudSyncStatus('Gagal: Tidak ada koneksi internet');
+                        } else {
+                            setCloudSyncStatus('Mode Lokal Aktif');
+                        }
+                        
+                        // Jika saat gagal transaksi kosong, isi dengan dummy
+                        if (transactions.length === 0) setTransactions(INITIAL_TRANSACTIONS);
                     }
                 );
 
@@ -364,9 +392,8 @@
             }, [user, db, appId]);
 
             useEffect(() => {
-                if (!user || !db || !isDataLoadedRef.current || !window.FB) return;
+                if (!user || !db || !isDataLoadedRef.current || !window.FB || isSyncError) return;
 
-                // Race condition fix: Langsung kunci update cloud begitu data lokal berubah
                 isSavingRef.current = true; 
                 setCloudSyncStatus('Menyimpan perubahan...');
 
@@ -377,13 +404,19 @@
                             transactions, categories, budgets, goals, debts, assets, rates
                         }, { merge: true });
                         setCloudSyncStatus('Tersinkronisasi ✓');
+                        setIsSyncError(false);
                     } catch (error) {
                         console.error("Save Data Error:", error);
-                        setCloudSyncStatus('Mode Lokal (Gagal Simpan)');
+                        setIsSyncError(true);
+                        if (error.code === 'permission-denied') {
+                            setCloudSyncStatus('Gagal Simpan: Akses Firestore Ditolak');
+                        } else {
+                            setCloudSyncStatus('Gagal Simpan ke Cloud');
+                        }
                     } finally {
                         setTimeout(() => { isSavingRef.current = false; }, 500);
                     }
-                }, 800); // Waktu debounce sedikit dipercepat (800ms)
+                }, 800); 
 
                 return () => clearTimeout(timer);
             }, [transactions, categories, budgets, goals, debts, assets, rates, user, db, appId]);
@@ -406,13 +439,11 @@
                 if (!auth || !window.FB) return;
                 triggerHaptic(20);
                 
-                // Segera update UI secara lokal agar tidak terasa lambat
                 setCloudSyncStatus('Proses keluar...');
                 isDataLoadedRef.current = false;
                 setUser(null); 
                 
-                // Bersihkan tampilan layar sesaat 
-                setTransactions(INITIAL_TRANSACTIONS); 
+                setTransactions([]); 
                 setAssets(INITIAL_ASSETS);
                 setBudgets(INITIAL_BUDGETS);
                 setGoals(INITIAL_GOALS);
@@ -481,7 +512,7 @@
             };
 
             const filteredTransactions = useMemo(() => {
-                return transactions.filter(t => {
+                return (transactions || []).filter(t => {
                     if (selectedMonth === 'all' && selectedYear === 'all') return true;
                     const tDate = new Date(t.date);
                     const mMatch = selectedMonth === 'all' || (tDate.getMonth() + 1) === parseInt(selectedMonth);
@@ -544,7 +575,7 @@
             }, [assets, goals, rates]);
 
             const availableYears = useMemo(() => {
-                const years = transactions.map(t => new Date(t.date).getFullYear());
+                const years = (transactions || []).map(t => new Date(t.date).getFullYear());
                 return [...new Set(years)].sort((a, b) => b - a);
             }, [transactions]);
 
@@ -751,7 +782,7 @@
                                             <button
                                                 onClick={() => {
                                                     triggerHaptic(15);
-                                                    setTransactions(prev => prev.filter(tx => tx.id !== t.id));
+                                                    setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id));
                                                 }}
                                                 className="p-1.5 bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors"
                                                 title="Hapus Transaksi"

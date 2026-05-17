@@ -131,7 +131,7 @@
                 'Sewa Rumah/Kost', 'Tagihan Listrik', 'Tagihan Air', 
                 'Internet dan Pulsa', 'Langganan (Netflix/Spotify)'
             ],
-            savings: ['Dana Darurat', 'Sinking Fund', 'Investasi Saham/Reksadana', 'Emas Digital'],
+            savings: ['Dana Darurat', 'Sinking Fund', 'Investasi Saham/Reksadana', 'Emas Digital', 'Obligasi'],
             debt: ['Cicilan Utang', 'Bayar Pinjaman', 'Cicilan Keyboard', 'Cicilan Digicam']
         };
 
@@ -144,11 +144,11 @@
         const UNITS = [
             'IDR', 'USD', 'SGD', 'EUR', 'AUD', 'JPY', 
             'Emas Antam (g)', 'Emas G24 (g)', 'Dinar KR', 
-            'Saham (IDR)', 'Reksadana (IDR)', 'Kripto (IDR)'
+            'Saham (IDR)', 'Reksadana (IDR)', 'Kripto (IDR)', 'Obligasi (IDR)'
         ];
 
         const INITIAL_RATES = {
-            'IDR': 1, 'Saham (IDR)': 1, 'Reksadana (IDR)': 1, 'Kripto (IDR)': 1,
+            'IDR': 1, 'Saham (IDR)': 1, 'Reksadana (IDR)': 1, 'Kripto (IDR)': 1, 'Obligasi (IDR)': 1,
             'USD': 15500, 'SGD': 11800, 'EUR': 17000, 'AUD': 10500, 'JPY': 105,
             'Emas Antam (g)': 1400000, 'Emas G24 (g)': 1395000, 'Dinar KR': 4500000
         };
@@ -594,7 +594,7 @@
                 }, 0);
             }, [goals, rates]);
 
-            const totalDebtAmount = useMemo(() => debts.reduce((sum, d) => sum + (d.type === 'debt' ? d.total - d.paid : 0), [debts]));
+            const totalDebtAmount = useMemo(() => debts.reduce((sum, d) => sum + (d.type === 'debt' ? d.total - d.paid : 0), 0), [debts]);
             const totalGrossWealth = totalGeneralAssets + totalGoalsAssets;
             const totalNetWorth = totalGrossWealth - totalDebtAmount;
             
@@ -1724,7 +1724,7 @@
                             <button onClick={() => { triggerHaptic(10); setPrivacyMode(!privacyMode); }} className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-slate-500 hover:bg-slate-100">
                                 {privacyMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                             </button>
-                            <div onClick={() => { handleTabChange('profile'); handleProfileTabChange('settings'); handleSettingsTabChange('account'); }} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 border-2 border-emerald-500 overflow-hidden cursor-pointer">
+                            <div onClick={() => { handleTabChange('profile'); handleProfileTabChange('settings'); }} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 border-2 border-emerald-500 overflow-hidden cursor-pointer">
                                 {user?.photoURL ? <img src={user.photoURL} className="w-full h-full object-cover" /> : <User className="w-5 h-5 text-emerald-600" />}
                             </div>
                         </div>

@@ -61,7 +61,7 @@
         const { useState, useMemo, useEffect, useRef } = React;
 
         // =====================================================================
-        // WRAPPER IKON - DIPERBAIKI SESUAI FORMAT PHOSPHOR VERSI TERBARU
+        // WRAPPER IKON
         // =====================================================================
         const createIcon = (phClasses) => ({ className, ...props }) => {
             let sizeClass = 'text-base';
@@ -211,7 +211,7 @@
             // Firebase & Sync States
             const [user, setUser] = useState(null);
             const [cloudSyncStatus, setCloudSyncStatus] = useState('Menunggu Inisialisasi...');
-            const [appId, setAppId] = useState("assets-liquid-loka");
+            const [appId, setAppId] = useState("lokaplanner-finance-app");
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
             
@@ -250,10 +250,15 @@
             useEffect(() => {
                 if (!window.FB) return;
 
+                // Memperbarui ke Firebase Konfigurasi yang baru
                 const MY_FIREBASE_CONFIG = {
-                    apiKey: "AIzaSyDKUSL_DSRjORdxpLsahxLamOluOLIQss8",
-                    authDomain: "assets-liquid.firebaseapp.com",
-                    projectId: "assets-liquid"
+                    apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
+                    authDomain: "lokaplanner-finance.firebaseapp.com",
+                    projectId: "lokaplanner-finance",
+                    storageBucket: "lokaplanner-finance.firebasestorage.app",
+                    messagingSenderId: "1045492224881",
+                    appId: "1:1045492224881:web:8790f7c1b48c8371e1dcd0",
+                    measurementId: "G-H3FBSF7WDD"
                 };
 
                 let initializedApp, initializedAuth, initializedDb, resolvedAppId;
@@ -265,7 +270,7 @@
                         resolvedAppId = (typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id').replace(/\//g, '_');
                     } else {
                         initializedApp = window.FB.initializeApp(MY_FIREBASE_CONFIG);
-                        resolvedAppId = "assets-liquid-loka"; 
+                        resolvedAppId = "lokaplanner-finance-app"; 
                     }
                     
                     initializedAuth = window.FB.getAuth(initializedApp);
@@ -340,6 +345,7 @@
                             isDataLoadedRef.current = true;
                             setCloudSyncStatus('Tersinkronisasi ✓');
                         } else if (!isSavingRef.current && !docSnap.metadata.fromCache) {
+                            // Mencegah cloud override saat sedang mengedit data secara lokal (Race condition fix)
                             if (docSnap.exists()) {
                                 applyCloudData(docSnap.data());
                                 setCloudSyncStatus('Disinkronkan dari perangkat lain ✓');
@@ -360,9 +366,11 @@
             useEffect(() => {
                 if (!user || !db || !isDataLoadedRef.current || !window.FB) return;
 
+                // Race condition fix: Langsung kunci update cloud begitu data lokal berubah
+                isSavingRef.current = true; 
+                setCloudSyncStatus('Menyimpan perubahan...');
+
                 const timer = setTimeout(async () => {
-                    isSavingRef.current = true;
-                    setCloudSyncStatus('Menyimpan...');
                     try {
                         const docRef = window.FB.doc(db, 'artifacts', appId, 'users', user.uid, 'appData', 'state');
                         await window.FB.setDoc(docRef, {
@@ -371,11 +379,11 @@
                         setCloudSyncStatus('Tersinkronisasi ✓');
                     } catch (error) {
                         console.error("Save Data Error:", error);
-                        setCloudSyncStatus('Mode Lokal');
+                        setCloudSyncStatus('Mode Lokal (Gagal Simpan)');
                     } finally {
-                        setTimeout(() => { isSavingRef.current = false; }, 1500);
+                        setTimeout(() => { isSavingRef.current = false; }, 500);
                     }
-                }, 1500);
+                }, 800); // Waktu debounce sedikit dipercepat (800ms)
 
                 return () => clearTimeout(timer);
             }, [transactions, categories, budgets, goals, debts, assets, rates, user, db, appId]);
@@ -397,9 +405,20 @@
             const handleLogout = async () => {
                 if (!auth || !window.FB) return;
                 triggerHaptic(20);
+                
+                // Segera update UI secara lokal agar tidak terasa lambat
+                setCloudSyncStatus('Proses keluar...');
+                isDataLoadedRef.current = false;
+                setUser(null); 
+                
+                // Bersihkan tampilan layar sesaat 
+                setTransactions(INITIAL_TRANSACTIONS); 
+                setAssets(INITIAL_ASSETS);
+                setBudgets(INITIAL_BUDGETS);
+                setGoals(INITIAL_GOALS);
+                setDebts(INITIAL_DEBTS);
+
                 try {
-                    setCloudSyncStatus('Proses keluar...');
-                    isDataLoadedRef.current = false;
                     await window.FB.signOut(auth);
                     if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
                         await window.FB.signInWithCustomToken(auth, window.__initial_auth_token);

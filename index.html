@@ -118,6 +118,7 @@
         const Cloud = createIcon('ph-fill ph-cloud');
         const LogIn = createIcon('ph-bold ph-sign-in');
         const LogOut = createIcon('ph-bold ph-sign-out');
+        const ArrowsLeftRight = createIcon('ph-bold ph-arrows-left-right');
 
         const INITIAL_CATEGORIES = {
             income: ['Gaji', 'Freelance', 'Income lainnya', 'Pencairan Investasi'],
@@ -169,7 +170,6 @@
             const [plannerTab, setPlannerTab] = useState('budget');
             const [profileTab, setProfileTab] = useState('networth');
             const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-            const [settingsTab, setSettingsTab] = useState('account');
 
             // Firebase & Sync States
             const [user, setUser] = useState(null);
@@ -220,7 +220,7 @@
             // Debt Detail & History States
             const [viewingDebtId, setViewingDebtId] = useState(null);
             const [isDebtTxModalOpen, setIsDebtTxModalOpen] = useState(false);
-            const [debtTxForm, setDebtTxForm] = useState({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: true });
+            const [debtTxForm, setDebtTxForm] = useState({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: true, walletId: '' });
 
             useEffect(() => {
                 if (!window.FB) return;
@@ -455,7 +455,6 @@
             const handleTabChange = (tabName) => { triggerHaptic(10); setActiveTab(tabName); window.scrollTo(0,0); };
             const handlePlannerTabChange = (tabName) => { triggerHaptic(10); setPlannerTab(tabName); };
             const handleProfileTabChange = (tabName) => { triggerHaptic(10); setProfileTab(tabName); };
-            const handleSettingsTabChange = (tabName) => { triggerHaptic(10); setSettingsTab(tabName); };
 
             const handleDebtTxSubmit = (e) => {
                 e.preventDefault();
@@ -484,7 +483,7 @@
                 });
                 setDebts(updatedDebts);
 
-                // Sinkronisasi otomatis ke riwayat Cashflow utama
+                // Sinkronisasi otomatis ke riwayat Cashflow utama dan UPDATE REKENING
                 if (debtTxForm.sync) {
                     let globalType = 'debt'; let globalCat = 'Cicilan Utang';
                     if (debt.type === 'debt' && debtTxForm.type === 'payment') { globalType = 'debt'; globalCat = 'Cicilan Utang'; }
@@ -495,12 +494,23 @@
                     setTransactions(prev => [{
                         id: Date.now() + 1, date: debtTxForm.date, amount: amountNum,
                         type: globalType, category: globalCat,
-                        description: `${debtTxForm.type === 'payment' ? 'Bayar' : 'Penambahan'}: ${debt.name}`
+                        description: `${debtTxForm.type === 'payment' ? 'Bayar' : 'Penambahan'}: ${debt.name}`,
+                        walletId: debtTxForm.walletId
                     }, ...(prev || [])]);
+
+                    if (debtTxForm.walletId) {
+                        setAssets(prevAssets => prevAssets.map(a => {
+                            if (a.id === debtTxForm.walletId) {
+                                let applyAmount = ['income'].includes(globalType) ? amountNum : -amountNum;
+                                return { ...a, quantity: Number(a.quantity || 0) + applyAmount };
+                            }
+                            return a;
+                        }));
+                    }
                 }
 
                 setIsDebtTxModalOpen(false);
-                setDebtTxForm({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: true });
+                setDebtTxForm({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: true, walletId: '' });
                 triggerHaptic(20);
             };
 
@@ -632,7 +642,7 @@
                         assets: g.assets.map(a => {
                             if (a.id !== assetId) return a;
                             const updatedAsset = { ...a, [field]: value };
-                            if (field === 'quantity') updatedAsset.amount = value;
+                            if (field === 'quantity') updatedAsset.amount = value; // Fallback lama
                             if (field === 'amount') updatedAsset.quantity = value;
                             return updatedAsset;
                         })
@@ -766,10 +776,12 @@
                                                 t.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 
                                                 t.type === 'savings' ? 'bg-indigo-100 text-indigo-600' :
                                                 t.type === 'debt' ? 'bg-orange-100 text-orange-600' :
+                                                t.type === 'transfer' ? 'bg-blue-100 text-blue-600' :
                                                 'bg-rose-100 text-rose-600'
                                             }`}>
                                                 {t.type === 'income' ? <ArrowDownRight className="w-5 h-5" /> : 
                                                  t.type === 'savings' ? <PiggyBank className="w-5 h-5" /> : 
+                                                 t.type === 'transfer' ? <ArrowsLeftRight className="w-5 h-5" /> :
                                                  <ArrowUpRight className="w-5 h-5" />}
                                             </div>
                                             <div>
@@ -779,9 +791,10 @@
                                         </div>
                                         <span className={`font-black text-sm ${
                                             t.type === 'income' ? 'text-emerald-600' : 
-                                            t.type === 'savings' ? 'text-indigo-600' : 'text-slate-800'
+                                            t.type === 'savings' ? 'text-indigo-600' : 
+                                            t.type === 'transfer' ? 'text-blue-600' : 'text-slate-800'
                                         }`}>
-                                            {t.type === 'income' ? '+' : '-'}{displayMoney(t.amount)}
+                                            {t.type === 'income' ? '+' : t.type === 'transfer' ? '' : '-'}{displayMoney(t.amount)}
                                         </span>
                                     </div>
                                 )) : (
@@ -813,7 +826,20 @@
                                 {filteredTransactions.map((t) => (
                                     <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                                         <td className="p-4 text-sm text-slate-500 whitespace-nowrap font-medium">{t.date}</td>
-                                        <td className="p-4 text-sm font-bold text-slate-800">{t.description}</td>
+                                        <td className="p-4 text-sm font-bold text-slate-800">
+                                            {t.description}
+                                            {t.type === 'transfer' ? (
+                                                <span className="block mt-0.5 text-[10px] font-bold text-blue-500">
+                                                    <ArrowsLeftRight className="inline w-3 h-3 mr-1" /> {assets.find(a => a.id === t.walletId)?.name} ➔ {assets.find(a => a.id === t.toWalletId)?.name}
+                                                </span>
+                                            ) : (
+                                                t.walletId && assets.find(a => a.id === t.walletId) && (
+                                                    <span className="block mt-0.5 text-[10px] font-bold text-slate-400">
+                                                        <Wallet className="inline w-3 h-3 mr-1" /> {assets.find(a => a.id === t.walletId).name}
+                                                    </span>
+                                                )
+                                            )}
+                                        </td>
                                         <td className="p-4 text-sm">
                                             <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200">{t.category}</span>
                                         </td>
@@ -823,11 +849,12 @@
                                                 t.type === 'spending' ? 'bg-rose-50 text-rose-600' :
                                                 t.type === 'savings' ? 'bg-indigo-50 text-indigo-600' :
                                                 t.type === 'bills' ? 'bg-orange-50 text-orange-600' :
+                                                t.type === 'transfer' ? 'bg-blue-50 text-blue-600' :
                                                 'bg-slate-100 text-slate-600'
                                             }`}>{t.type}</span>
                                         </td>
-                                        <td className={`p-4 text-sm font-black text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-800'}`}>
-                                            {t.type === 'income' ? '+' : '-'}{displayMoney(t.amount)}
+                                        <td className={`p-4 text-sm font-black text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : t.type === 'transfer' ? 'text-blue-600' : 'text-slate-800'}`}>
+                                            {t.type === 'income' ? '+' : t.type === 'transfer' ? '⇄ ' : '-'}{displayMoney(t.amount)}
                                         </td>
                                         <td className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-1.5">
@@ -839,7 +866,26 @@
                                                     <PencilSimple className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => { triggerHaptic(15); setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id)); }}
+                                                    onClick={() => { 
+                                                        triggerHaptic(15); 
+                                                        // Jika dihapus, otomatis kembalikan saldo
+                                                        if (t.type === 'transfer') {
+                                                            setAssets(prev => prev.map(a => {
+                                                                if (a.id === t.walletId) return { ...a, quantity: Number(a.quantity || 0) + t.amount };
+                                                                if (a.id === t.toWalletId) return { ...a, quantity: Number(a.quantity || 0) - t.amount };
+                                                                return a;
+                                                            }));
+                                                        } else if (t.walletId) {
+                                                            setAssets(prev => prev.map(a => {
+                                                                if (a.id === t.walletId) {
+                                                                    let revertAmount = ['income'].includes(t.type) ? -t.amount : t.amount;
+                                                                    return { ...a, quantity: Number(a.quantity || 0) + revertAmount };
+                                                                }
+                                                                return a;
+                                                            }));
+                                                        }
+                                                        setTransactions(prev => (prev || []).filter(tx => tx.id !== t.id)); 
+                                                    }}
                                                     className="p-1.5 bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors border border-transparent hover:border-rose-200"
                                                     title="Hapus Transaksi"
                                                 >
@@ -870,7 +916,7 @@
                     </div>
 
                     {plannerTab === 'budget' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-8">
+                        <div className="space-y-6 animate-in slide-in-from-right-8 pb-10">
                             {/* Top Unified Header Summary */}
                             <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
                                 <div className="absolute -right-6 -top-6 opacity-5 pointer-events-none">
@@ -1022,11 +1068,74 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            {/* --- EDIT / TAMBAH RENCANA (Pindahan dari Settings) --- */}
+                            <div className="mt-8 bg-slate-200/50 p-6 rounded-3xl border border-slate-200/60">
+                                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-rose-500"/> Manajemen Rencana Bulanan</h3>
+                                <div className="space-y-3 mb-8">
+                                    {Object.entries(budgets).map(([cat, limit]) => {
+                                        const isEditing = editingBudgetCat === cat;
+                                        return (
+                                            <div key={cat} className="flex justify-between items-center p-3 border border-white rounded-xl bg-white shadow-sm">
+                                                <span className="font-bold text-slate-700 text-sm md:text-base">{cat}</span>
+                                                {isEditing ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <input 
+                                                            type="text" inputMode="numeric"
+                                                            className="w-28 px-2 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold" 
+                                                            value={editingBudgetLimit ? Number(editingBudgetLimit).toLocaleString('id-ID') : ''} 
+                                                            onChange={e => {
+                                                                const val = e.target.value.replace(/\D/g, '');
+                                                                setEditingBudgetLimit(val);
+                                                            }} 
+                                                        />
+                                                        <button onClick={() => { triggerHaptic(20); setBudgets({ ...budgets, [cat]: Number(editingBudgetLimit) }); setEditingBudgetCat(null); }} className="p-1.5 bg-emerald-500 text-white rounded-md"><CheckCircle2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-black text-slate-900 text-sm md:text-base">{formatRupiah(limit)}</span>
+                                                        <button onClick={() => { triggerHaptic(10); setEditingBudgetCat(cat); setEditingBudgetLimit(limit.toString()); }} className="text-slate-400 hover:text-slate-600 p-1 bg-slate-50 rounded-md border border-slate-200"><Settings className="w-4 h-4" /></button>
+                                                        <button onClick={() => { triggerHaptic(15); const newB = {...budgets}; delete newB[cat]; setBudgets(newB); }} className="text-rose-400 hover:text-rose-600 p-1 bg-slate-50 rounded-md border border-slate-200"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {Object.keys(budgets).length === 0 && <p className="text-sm text-slate-500 text-center py-4">Daftar rencana kosong.</p>}
+                                </div>
+                                <div className="border-t border-slate-300/50 pt-6 flex flex-col md:flex-row gap-3">
+                                    <select className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 flex-1" value={newBudgetCat} onChange={e => setNewBudgetCat(e.target.value)}>
+                                        <option value="">-- Pilih Kategori --</option>
+                                        <optgroup label="Kebutuhan (Spending)">
+                                            {(categories.spending || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Tagihan (Bills)">
+                                            {(categories.bills || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Tabungan (Savings)">
+                                            {(categories.savings || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Hutang (Debt)">
+                                            {(categories.debt || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </optgroup>
+                                    </select>
+                                    <input 
+                                        type="text" inputMode="numeric" placeholder="Nominal Limit (Rp)" 
+                                        className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold" 
+                                        value={newBudgetLimit ? Number(newBudgetLimit).toLocaleString('id-ID') : ''} 
+                                        onChange={e => {
+                                            const val = e.target.value.replace(/\D/g, '');
+                                            setNewBudgetLimit(val);
+                                        }}
+                                    />
+                                    <button onClick={() => { if(newBudgetCat && newBudgetLimit) { triggerHaptic(20); setBudgets({...budgets, [newBudgetCat]: Number(newBudgetLimit)}); setNewBudgetCat(''); setNewBudgetLimit(''); }}} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Simpan Rencana</button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     {plannerTab === 'goals' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-left-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-left-8 pb-10">
                             {/* TABUNGAN SECTION */}
                             <div className="space-y-6">
                                 <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm mb-6 flex justify-between items-center">
@@ -1117,13 +1226,15 @@
                                                                         <div className="flex flex-col items-end">
                                                                             <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-indigo-500 transition">
                                                                                 <input
-                                                                                    type={privacyMode ? "password" : "text"}
-                                                                                    inputMode="numeric"
+                                                                                    type={asset.unit === 'IDR' ? (privacyMode ? "password" : "text") : "number"}
+                                                                                    step={asset.unit === 'IDR' ? undefined : "any"}
+                                                                                    inputMode={asset.unit === 'IDR' ? "numeric" : "decimal"}
                                                                                     className="w-24 bg-transparent text-right text-sm font-bold outline-none px-2 py-1.5"
-                                                                                    value={privacyMode ? "12345678" : (asset.quantity !== undefined && asset.quantity !== '' ? Number(asset.quantity).toLocaleString('id-ID') : '')}
+                                                                                    value={asset.unit === 'IDR' ? (privacyMode ? "12345678" : (asset.quantity !== undefined && asset.quantity !== '' ? Number(asset.quantity).toLocaleString('id-ID') : '')) : (asset.quantity !== undefined ? asset.quantity : '')}
                                                                                     onChange={(e) => {
-                                                                                        const val = e.target.value.replace(/\D/g, '');
-                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', val !== '' ? Number(val) : '');
+                                                                                        let val = e.target.value;
+                                                                                        if (asset.unit === 'IDR') val = val.replace(/\D/g, '');
+                                                                                        updateGoalAsset(goal.id, asset.id, 'quantity', val !== '' ? (asset.unit === 'IDR' ? Number(val) : parseFloat(val)) : '');
                                                                                     }}
                                                                                     placeholder="0"
                                                                                 />
@@ -1358,7 +1469,7 @@
                     </div>
 
                     {profileTab === 'networth' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-8">
+                        <div className="space-y-6 animate-in slide-in-from-right-8 pb-10">
                             <div className="bg-emerald-900 text-white p-8 rounded-[2rem] shadow-sm text-center relative overflow-hidden">
                                 <div className="absolute -top-10 -right-10 opacity-10"><Landmark className="w-48 h-48" /></div>
                                 <p className="text-emerald-200 text-sm font-bold mb-2 relative z-10 uppercase tracking-widest">Kekayaan Bersih (Net Worth)</p>
@@ -1407,215 +1518,17 @@
                                     </div>
                                 </div>
 
-                                <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden h-fit">
-                                    <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                                        <h3 className="text-xl font-bold text-slate-800">Detail Rekening Utama</h3>
-                                    </div>
-                                    <table className="w-full text-left border-collapse">
-                                        <tbody>
-                                            {assets.map(asset => (
-                                                <tr key={asset.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
-                                                    <td className="p-4 text-sm font-bold text-slate-800">
-                                                        {asset.name}
-                                                        <span className="block text-[10px] text-slate-500">{asset.category}</span>
-                                                    </td>
-                                                    <td className="p-4 text-sm font-black text-emerald-600 text-right">
-                                                        <span className="block">{displayMoney(getAssetValueInIDR(asset))}</span>
-                                                        {asset.unit !== 'IDR' && <span className="text-[10px] text-slate-400 font-semibold">{asset.quantity !== undefined ? asset.quantity : asset.amount} {asset.unit}</span>}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {profileTab === 'settings' && (
-                        <div className="space-y-6 animate-in slide-in-from-left-8">
-                            <div className="flex gap-2 overflow-x-auto hide-scrollbar border-b border-slate-200 pb-2">
-                                {[
-                                    { id: 'account', label: 'Akun & Sync' },
-                                    { id: 'categories', label: 'Kategori Cashflow' },
-                                    { id: 'budgets', label: 'Rencana Bulanan' },
-                                    { id: 'assets', label: 'Rekening Utama' },
-                                    { id: 'rates', label: 'Nilai Tukar Valas' },
-                                ].map(tab => (
-                                    <button 
-                                        key={tab.id} onClick={() => handleSettingsTabChange(tab.id)}
-                                        className={`px-4 py-2 text-sm font-bold rounded-full whitespace-nowrap transition-all ${settingsTab === tab.id ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {settingsTab === 'account' && (
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Cloud className="w-5 h-5 text-indigo-500"/> Cloud Sync & Akun</h3>
-                                    {!user || user.isAnonymous ? (
-                                        <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                                            <p className="text-sm text-slate-500 mb-6 font-medium max-w-sm mx-auto">Masuk dengan Google untuk menyimpan data finansial Anda secara permanen di Cloud.</p>
-                                            <button onClick={handleGoogleLogin} className="bg-slate-900 text-white px-6 py-3.5 rounded-xl font-bold text-sm hover:bg-slate-800 flex items-center gap-2 mx-auto">
-                                                <LogIn className="w-4 h-4" /> Masuk dengan Google
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-                                            <div className="flex items-center gap-4 w-full md:w-auto">
-                                                {user.photoURL ? <img src={user.photoURL} alt="Profile" className="w-14 h-14 rounded-full border-4 border-white shadow-sm" /> : <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-xl border-4 border-white shadow-sm">{user.displayName ? user.displayName[0] : 'U'}</div>}
-                                                <div>
-                                                    <p className="font-black text-slate-800 text-lg">{user.displayName || 'Pengguna Loka'}</p>
-                                                    <p className="text-xs text-slate-500 font-medium">{user.email || 'Mode Guest Platform'}</p>
-                                                </div>
-                                            </div>
-                                            <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-5 py-3 rounded-xl hover:bg-rose-100 font-bold text-sm flex items-center gap-2 justify-center w-full md:w-auto">
-                                                <LogOut className="w-4 h-4" /> Keluar Akun
-                                            </button>
-                                        </div>
-                                    )}
-                                    <div className="mt-6 pt-6 border-t border-slate-100 flex justify-between items-center gap-2">
-                                        <div><span className="block text-xs font-bold text-slate-500 uppercase">Status Sinkronisasi</span></div>
-                                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">{cloudSyncStatus}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {settingsTab === 'rates' && (
-                                <div className="space-y-6">
-                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-500" /> Live Exchange API (Valas)</div>
-                                        <div className="flex flex-col md:flex-row justify-between gap-4">
-                                            <div><p className="text-sm font-bold text-slate-800">Sinkronisasi Kurs Mata Uang</p><p className="text-[10px] text-slate-500 font-medium">Mendukung USD, SGD, dll (Otomatis 5 Menit).</p></div>
-                                            <button onClick={() => { triggerHaptic(15); fetchLiveRates(); }} disabled={isFetchingRates} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
-                                                {isFetchingRates ? <Loader2 className="w-4 h-4" /> : <Globe className="w-4 h-4" />} {isFetchingRates ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}
-                                            </button>
-                                        </div>
-                                        {rateSyncStatus === 'success' && <div className="mt-4 bg-emerald-50 text-emerald-600 text-sm font-bold p-3 rounded-xl flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Sinkronisasi Sukses</div>}
-                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
-                                            {['USD', 'SGD', 'EUR', 'AUD', 'JPY'].map(currency => (
-                                                <div key={currency} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
-                                                    <p className="text-[10px] font-bold text-slate-500 mb-1">{currency}</p>
-                                                    <p className="font-black text-slate-800 text-sm">{formatRupiah(rates[currency] || 0)}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                {/* EDIT ASSET INLINE (Pindahan dari Settings) */}
+                                <div className="bg-slate-200/50 p-6 rounded-3xl h-fit border border-slate-200/60">
+                                    <h3 className="text-lg font-bold flex items-center gap-2 mb-6 text-slate-800">
+                                        <Landmark className="w-5 h-5 text-emerald-500" /> Detail Rekening Utama
+                                    </h3>
                                     
-                                    <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2"><Coins className="w-4 h-4 text-amber-500" /> Harga Manual Emas (IDR)</div>
-                                        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div><label className="text-[11px] font-bold text-slate-500 mb-1.5 block">Antam / g</label><input type="text" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold" value={(rates['Emas Antam (g)'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Emas Antam (g)', e.target.value)} /></div>
-                                            <div><label className="text-[11px] font-bold text-slate-500 mb-1.5 block">Galeri24 / g</label><input type="text" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold" value={(rates['Emas G24 (g)'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Emas G24 (g)', e.target.value)} /></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {settingsTab === 'categories' && (
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Tags className="w-5 h-5 text-indigo-500"/> Atur Kategori Cashflow</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        {Object.entries(categories).map(([type, list]) => (
-                                            <div key={type}>
-                                                <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 bg-slate-50 p-2 rounded-lg">{type}</h4>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {list.map(cat => (
-                                                        <div key={cat} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-sm">
-                                                            <span className="font-bold text-slate-700">{cat}</span>
-                                                            <button onClick={() => { triggerHaptic(15); setCategories({...categories, [type]: categories[type].filter(c => c !== cat)}); }} className="text-slate-400 hover:text-rose-500 ml-1"><X className="w-3.5 h-3.5"/></button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="mt-8 border-t border-slate-100 pt-6">
-                                        <h4 className="text-sm font-bold text-slate-800 mb-3">Tambah Kategori Baru</h4>
-                                        <div className="flex flex-col md:flex-row gap-3">
-                                            <select className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700" value={newCatType} onChange={e => setNewCatType(e.target.value)}>
-                                                <option value="income">Income</option><option value="spending">Spending</option>
-                                                <option value="bills">Bills</option><option value="savings">Savings</option><option value="debt">Debt</option>
-                                            </select>
-                                            <input type="text" placeholder="Nama Kategori" className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newCatName} onChange={e => setNewCatName(e.target.value)}/>
-                                            <button onClick={() => { if(newCatName) { triggerHaptic(20); setCategories({...categories, [newCatType]: [...categories[newCatType], newCatName]}); setNewCatName(''); }}} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700">Tambah</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {settingsTab === 'budgets' && (
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-rose-500"/> Atur Rencana Pengeluaran Bulanan</h3>
-                                    <div className="space-y-3 mb-8">
-                                        {Object.entries(budgets).map(([cat, limit]) => {
-                                            const isEditing = editingBudgetCat === cat;
-                                            return (
-                                                <div key={cat} className="flex justify-between items-center p-3 border border-slate-100 rounded-xl bg-slate-50">
-                                                    <span className="font-bold text-slate-700">{cat}</span>
-                                                    {isEditing ? (
-                                                        <div className="flex items-center gap-1.5">
-                                                            <input 
-                                                                type="text" inputMode="numeric"
-                                                                className="w-28 px-2 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold" 
-                                                                value={editingBudgetLimit ? Number(editingBudgetLimit).toLocaleString('id-ID') : ''} 
-                                                                onChange={e => {
-                                                                    const val = e.target.value.replace(/\D/g, '');
-                                                                    setEditingBudgetLimit(val);
-                                                                }} 
-                                                            />
-                                                            <button onClick={() => { triggerHaptic(20); setBudgets({ ...budgets, [cat]: Number(editingBudgetLimit) }); setEditingBudgetCat(null); }} className="p-1.5 bg-emerald-500 text-white rounded-md"><CheckCircle2 className="w-4 h-4" /></button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-3">
-                                                            <span className="font-black text-slate-900">{formatRupiah(limit)}</span>
-                                                            <button onClick={() => { triggerHaptic(10); setEditingBudgetCat(cat); setEditingBudgetLimit(limit.toString()); }} className="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-md border border-slate-200"><Settings className="w-4 h-4" /></button>
-                                                            <button onClick={() => { triggerHaptic(15); const newB = {...budgets}; delete newB[cat]; setBudgets(newB); }} className="text-rose-400 hover:text-rose-600 p-1 bg-white rounded-md border border-slate-200"><Trash2 className="w-4 h-4" /></button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="border-t border-slate-100 pt-6 flex flex-col md:flex-row gap-3">
-                                        <select className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 flex-1" value={newBudgetCat} onChange={e => setNewBudgetCat(e.target.value)}>
-                                            <option value="">-- Pilih Kategori --</option>
-                                            <optgroup label="Kebutuhan (Spending)">
-                                                {(categories.spending || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                            </optgroup>
-                                            <optgroup label="Tagihan (Bills)">
-                                                {(categories.bills || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                            </optgroup>
-                                            <optgroup label="Tabungan (Savings)">
-                                                {(categories.savings || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                            </optgroup>
-                                            <optgroup label="Hutang (Debt)">
-                                                {(categories.debt || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                            </optgroup>
-                                        </select>
-                                        <input 
-                                            type="text" inputMode="numeric" placeholder="Nominal Limit (Rp)" 
-                                            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" 
-                                            value={newBudgetLimit ? Number(newBudgetLimit).toLocaleString('id-ID') : ''} 
-                                            onChange={e => {
-                                                const val = e.target.value.replace(/\D/g, '');
-                                                setNewBudgetLimit(val);
-                                            }}
-                                        />
-                                        <button onClick={() => { if(newBudgetCat && newBudgetLimit) { triggerHaptic(20); setBudgets({...budgets, [newBudgetCat]: Number(newBudgetLimit)}); setNewBudgetCat(''); setNewBudgetLimit(''); }}} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Simpan</button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {settingsTab === 'assets' && (
-                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Landmark className="w-5 h-5 text-emerald-500"/> Atur Rekening Utama</h3>
-                                    <div className="space-y-3 mb-8">
+                                    <div className="space-y-3 mb-6">
                                         {assets.map(asset => {
                                             const isEditing = editingAssetId === asset.id;
                                             return (
-                                                <div key={asset.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50 flex flex-col gap-3">
+                                                <div key={asset.id} className="p-4 border border-white rounded-xl bg-white shadow-sm flex flex-col gap-3">
                                                     {isEditing ? (
                                                         <div className="space-y-3">
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1629,11 +1542,12 @@
                                                                     {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                                                 </select>
                                                                 <input 
-                                                                    type="text" inputMode="numeric"
+                                                                    type={editingAsset.unit === 'IDR' ? "text" : "number"} step={editingAsset.unit === 'IDR' ? undefined : "any"} inputMode={editingAsset.unit === 'IDR' ? "numeric" : "decimal"}
                                                                     className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold" 
-                                                                    value={editingAsset.quantity ? Number(editingAsset.quantity).toLocaleString('id-ID') : ''} 
+                                                                    value={editingAsset.unit === 'IDR' ? (editingAsset.quantity ? Number(editingAsset.quantity).toLocaleString('id-ID') : '') : editingAsset.quantity} 
                                                                     onChange={e => {
-                                                                        const val = e.target.value.replace(/\D/g, '');
+                                                                        let val = e.target.value;
+                                                                        if (editingAsset.unit === 'IDR') val = val.replace(/\D/g, '');
                                                                         setEditingAsset({ ...editingAsset, quantity: val });
                                                                     }} 
                                                                     placeholder="Saldo/Kuantitas" 
@@ -1656,8 +1570,8 @@
                                                                     {asset.unit !== 'IDR' && <span className="text-[10px] font-bold text-slate-400">{asset.quantity !== undefined ? asset.quantity : asset.amount} {asset.unit}</span>}
                                                                 </div>
                                                                 <div className="flex gap-1.5">
-                                                                    <button onClick={() => { triggerHaptic(10); setEditingAssetId(asset.id); setEditingAsset({ name: asset.name, category: asset.category, unit: asset.unit || 'IDR', quantity: asset.quantity !== undefined ? asset.quantity : asset.amount }); }} className="text-slate-400 hover:text-slate-600 p-1.5 bg-white rounded-md border border-slate-200"><Settings className="w-4 h-4" /></button>
-                                                                    <button onClick={() => { triggerHaptic(15); setAssets(assets.filter(a => a.id !== asset.id)); }} className="text-rose-400 hover:text-rose-600 p-1.5 bg-white rounded-md border border-slate-200"><Trash2 className="w-4 h-4" /></button>
+                                                                    <button onClick={() => { triggerHaptic(10); setEditingAssetId(asset.id); setEditingAsset({ name: asset.name, category: asset.category, unit: asset.unit || 'IDR', quantity: asset.quantity !== undefined ? asset.quantity : asset.amount }); }} className="text-slate-400 hover:text-slate-600 p-1.5 bg-slate-50 rounded-md border border-slate-200"><Settings className="w-4 h-4" /></button>
+                                                                    <button onClick={() => { triggerHaptic(15); setAssets(assets.filter(a => a.id !== asset.id)); }} className="text-rose-400 hover:text-rose-600 p-1.5 bg-slate-50 rounded-md border border-slate-200"><Trash2 className="w-4 h-4" /></button>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1665,28 +1579,129 @@
                                                 </div>
                                             );
                                         })}
+                                        {assets.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Belum ada Rekening Utama.</p>}
                                     </div>
-                                    <div className="border-t border-slate-100 pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3">
-                                        <input type="text" placeholder="Nama Bank / Aset" className="lg:col-span-4 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})}/>
-                                        <select className="lg:col-span-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.category} onChange={e => setNewAsset({...newAsset, category: e.target.value})}>
+                                    
+                                    {/* TAMBAH ASET BARU */}
+                                    <div className="border-t border-slate-300/50 pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3">
+                                        <input type="text" placeholder="Nama Bank / Aset" className="lg:col-span-4 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})}/>
+                                        <select className="lg:col-span-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.category} onChange={e => setNewAsset({...newAsset, category: e.target.value})}>
                                             <option value="On Hand Cash">On Hand Cash</option><option value="Bank Cash">Bank Cash</option><option value="Investasi">Investasi</option><option value="Aset Fisik">Aset Fisik</option>
                                         </select>
-                                        <select className="lg:col-span-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.unit} onChange={e => setNewAsset({...newAsset, unit: e.target.value})}>
+                                        <select className="lg:col-span-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold" value={newAsset.unit} onChange={e => setNewAsset({...newAsset, unit: e.target.value})}>
                                             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                         </select>
                                         <input 
-                                            type="text" inputMode="numeric" placeholder="Saldo/Kuantitas" 
-                                            className="lg:col-span-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" 
-                                            value={newAsset.quantity ? Number(newAsset.quantity).toLocaleString('id-ID') : ''} 
+                                            type={newAsset.unit === 'IDR' ? "text" : "number"} step={newAsset.unit === 'IDR' ? undefined : "any"} inputMode={newAsset.unit === 'IDR' ? "numeric" : "decimal"} placeholder="Saldo/Kuantitas" 
+                                            className="lg:col-span-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold" 
+                                            value={newAsset.unit === 'IDR' ? (newAsset.quantity ? Number(newAsset.quantity).toLocaleString('id-ID') : '') : newAsset.quantity} 
                                             onChange={e => {
-                                                const val = e.target.value.replace(/\D/g, '');
+                                                let val = e.target.value;
+                                                if (newAsset.unit === 'IDR') val = val.replace(/\D/g, '');
                                                 setNewAsset({...newAsset, quantity: val});
                                             }}
                                         />
                                         <button onClick={() => { if(newAsset.name && newAsset.quantity) { triggerHaptic(20); setAssets([...assets, { ...newAsset, id: Date.now(), quantity: Number(newAsset.quantity) }]); setNewAsset({ name: '', category: 'Bank Cash', unit: 'IDR', quantity: '' }); }}} className="lg:col-span-12 bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Tambah Aset Baru</button>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        </div>
+                    )}
+
+                    {profileTab === 'settings' && (
+                        <div className="space-y-8 animate-in slide-in-from-left-8 pb-10 max-w-2xl mx-auto">
+                            
+                            {/* SECTION AKUN */}
+                            <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
+                                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Cloud className="w-5 h-5 text-indigo-500"/> Akun & Cloud Sync</h3>
+                                {!user || user.isAnonymous ? (
+                                    <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                                        <p className="text-sm text-slate-500 mb-6 font-medium max-w-sm mx-auto">Masuk dengan Google untuk menyimpan data finansial Anda secara permanen di Cloud.</p>
+                                        <button onClick={handleGoogleLogin} className="bg-slate-900 text-white px-6 py-3.5 rounded-xl font-bold text-sm hover:bg-slate-800 flex items-center gap-2 mx-auto">
+                                            <LogIn className="w-4 h-4" /> Masuk dengan Google
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+                                        <div className="flex items-center gap-4 w-full md:w-auto">
+                                            {user.photoURL ? <img src={user.photoURL} alt="Profile" className="w-14 h-14 rounded-full border-4 border-white shadow-sm" /> : <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-xl border-4 border-white shadow-sm">{user.displayName ? user.displayName[0] : 'U'}</div>}
+                                            <div>
+                                                <p className="font-black text-slate-800 text-lg">{user.displayName || 'Pengguna Loka'}</p>
+                                                <p className="text-xs text-slate-500 font-medium">{user.email || 'Mode Guest Platform'}</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-5 py-3 rounded-xl hover:bg-rose-100 font-bold text-sm flex items-center gap-2 justify-center w-full md:w-auto">
+                                            <LogOut className="w-4 h-4" /> Keluar Akun
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="mt-6 pt-6 border-t border-slate-100 flex justify-between items-center gap-2">
+                                    <div><span className="block text-xs font-bold text-slate-500 uppercase">Status Sinkronisasi</span></div>
+                                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">{cloudSyncStatus}</span>
+                                </div>
+                            </div>
+
+                            {/* SECTION KATEGORI */}
+                            <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
+                                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Tags className="w-5 h-5 text-indigo-500"/> Atur Kategori Cashflow</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {Object.entries(categories).map(([type, list]) => (
+                                        <div key={type}>
+                                            <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 bg-slate-50 p-2 rounded-lg">{type}</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {list.map(cat => (
+                                                    <div key={cat} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-sm">
+                                                        <span className="font-bold text-slate-700">{cat}</span>
+                                                        <button onClick={() => { triggerHaptic(15); setCategories({...categories, [type]: categories[type].filter(c => c !== cat)}); }} className="text-slate-400 hover:text-rose-500 ml-1"><X className="w-3.5 h-3.5"/></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-8 border-t border-slate-100 pt-6">
+                                    <h4 className="text-sm font-bold text-slate-800 mb-3">Tambah Kategori Baru</h4>
+                                    <div className="flex flex-col md:flex-row gap-3">
+                                        <select className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700" value={newCatType} onChange={e => setNewCatType(e.target.value)}>
+                                            <option value="income">Income</option><option value="spending">Spending</option>
+                                            <option value="bills">Bills</option><option value="savings">Savings</option><option value="debt">Debt</option>
+                                        </select>
+                                        <input type="text" placeholder="Nama Kategori" className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newCatName} onChange={e => setNewCatName(e.target.value)}/>
+                                        <button onClick={() => { if(newCatName) { triggerHaptic(20); setCategories({...categories, [newCatType]: [...categories[newCatType], newCatName]}); setNewCatName(''); }}} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700">Tambah</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECTION VALAS */}
+                            <div className="space-y-6">
+                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-500" /> Live Exchange API (Valas)</div>
+                                    <div className="flex flex-col md:flex-row justify-between gap-4">
+                                        <div><p className="text-sm font-bold text-slate-800">Sinkronisasi Kurs Mata Uang</p><p className="text-[10px] text-slate-500 font-medium">Mendukung USD, SGD, dll (Otomatis 5 Menit).</p></div>
+                                        <button onClick={() => { triggerHaptic(15); fetchLiveRates(); }} disabled={isFetchingRates} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+                                            {isFetchingRates ? <Loader2 className="w-4 h-4" /> : <Globe className="w-4 h-4" />} {isFetchingRates ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}
+                                        </button>
+                                    </div>
+                                    {rateSyncStatus === 'success' && <div className="mt-4 bg-emerald-50 text-emerald-600 text-sm font-bold p-3 rounded-xl flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Sinkronisasi Sukses</div>}
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
+                                        {['USD', 'SGD', 'EUR', 'AUD', 'JPY'].map(currency => (
+                                            <div key={currency} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
+                                                <p className="text-[10px] font-bold text-slate-500 mb-1">{currency}</p>
+                                                <p className="font-black text-slate-800 text-sm">{formatRupiah(rates[currency] || 0)}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2"><Coins className="w-4 h-4 text-amber-500" /> Harga Manual Emas (IDR)</div>
+                                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div><label className="text-[11px] font-bold text-slate-500 mb-1.5 block">Antam / g</label><input type="text" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold" value={(rates['Emas Antam (g)'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Emas Antam (g)', e.target.value)} /></div>
+                                        <div><label className="text-[11px] font-bold text-slate-500 mb-1.5 block">Galeri24 / g</label><input type="text" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold" value={(rates['Emas G24 (g)'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Emas G24 (g)', e.target.value)} /></div>
+                                        <div><label className="text-[11px] font-bold text-slate-500 mb-1.5 block">Dinar KR / koin</label><input type="text" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold" value={(rates['Dinar KR'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Dinar KR', e.target.value)} /></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1775,9 +1790,42 @@
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex justify-center items-end md:items-center p-0 md:p-4 animate-in fade-in">
                             <TransactionForm 
                                 initialData={editingTx}
+                                assets={assets}
                                 onClose={() => { triggerHaptic(10); setIsAddModalOpen(false); setEditingTx(null); }} 
                                 onSave={(newTx, editId) => { 
                                     triggerHaptic(25); 
+                                    
+                                    let oldTx = null;
+                                    if(editId) oldTx = transactions.find(t => t.id === editId);
+
+                                    // Auto UPDATE SALDO REKENING berdasarkan Transaksi
+                                    setAssets(prevAssets => {
+                                        let updatedAssets = [...prevAssets];
+                                        
+                                        // 1. Jika ini Edit Transaksi, kembalikan saldo lama dulu
+                                        if (oldTx) {
+                                            if (oldTx.type === 'transfer') {
+                                                if (oldTx.walletId) updatedAssets = updatedAssets.map(a => a.id === oldTx.walletId ? { ...a, quantity: Number(a.quantity || 0) + oldTx.amount } : a);
+                                                if (oldTx.toWalletId) updatedAssets = updatedAssets.map(a => a.id === oldTx.toWalletId ? { ...a, quantity: Number(a.quantity || 0) - oldTx.amount } : a);
+                                            } else if (oldTx.walletId) {
+                                                const revertAmount = ['income'].includes(oldTx.type) ? -oldTx.amount : oldTx.amount;
+                                                updatedAssets = updatedAssets.map(a => a.id === oldTx.walletId ? { ...a, quantity: Number(a.quantity || 0) + revertAmount } : a);
+                                            }
+                                        }
+                                        
+                                        // 2. Terapkan pemotongan/penambahan transaksi baru
+                                        if (newTx.type === 'transfer') {
+                                            if (newTx.walletId) updatedAssets = updatedAssets.map(a => a.id === newTx.walletId ? { ...a, quantity: Number(a.quantity || 0) - newTx.amount } : a);
+                                            if (newTx.toWalletId) updatedAssets = updatedAssets.map(a => a.id === newTx.toWalletId ? { ...a, quantity: Number(a.quantity || 0) + newTx.amount } : a);
+                                        } else if (newTx.walletId) {
+                                            const applyAmount = ['income'].includes(newTx.type) ? newTx.amount : -newTx.amount;
+                                            updatedAssets = updatedAssets.map(a => a.id === newTx.walletId ? { ...a, quantity: Number(a.quantity || 0) + applyAmount } : a);
+                                        }
+                                        
+                                        return updatedAssets;
+                                    });
+
+                                    // Simpan ke Riwayat Transaksi
                                     if(editId) {
                                         setTransactions(prev => prev.map(t => t.id === editId ? { ...newTx, id: editId } : t));
                                     } else {
@@ -1906,13 +1954,16 @@
                                             <input type="date" required value={debtTxForm.date} onChange={(e) => setDebtTxForm({...debtTxForm, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#2D5B99]" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Keterangan</label>
-                                            <input type="text" value={debtTxForm.note} onChange={(e) => setDebtTxForm({...debtTxForm, note: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#2D5B99]" placeholder={debtTxForm.type === 'payment' ? 'Bayar Utang' : 'Utang Baru'} />
+                                            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Pilih Dompet (Jika Sync)</label>
+                                            <select value={debtTxForm.walletId} onChange={(e) => setDebtTxForm({...debtTxForm, walletId: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#2D5B99]">
+                                                <option value="">-- Abaikan --</option>
+                                                {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                            </select>
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-2">
                                         <input type="checkbox" id="syncCheck" checked={debtTxForm.sync} onChange={(e) => setDebtTxForm({...debtTxForm, sync: e.target.checked})} className="w-5 h-5 mt-0.5 accent-[#2D5B99]" />
-                                        <label htmlFor="syncCheck" className="text-xs font-bold text-slate-700 cursor-pointer">Centang ini jika Anda ingin sistem otomatis memotong Saldo Cashflow dan mencatatnya ke Riwayat Transaksi.</label>
+                                        <label htmlFor="syncCheck" className="text-xs font-bold text-slate-700 cursor-pointer">Centang ini jika Anda ingin sistem otomatis memotong Saldo Dompet dan mencatatnya ke Riwayat Transaksi.</label>
                                     </div>
                                     <button type="submit" className="w-full bg-[#2D5B99] text-white font-black text-lg py-4 rounded-xl flex justify-center items-center gap-2 mt-4 hover:bg-indigo-800 transition-colors">
                                         <CheckCircle2 className="w-5 h-5" /> Simpan Riwayat
@@ -1925,36 +1976,46 @@
             );
         }
 
-        function TransactionForm({ onClose, onSave, categories, initialData }) {
+        function TransactionForm({ onClose, onSave, categories, initialData, assets }) {
             const { useState } = React;
             
-            // Set input dengan data yang sedang diedit (jika ada)
             const [type, setType] = useState(initialData?.type || 'spending');
             const [amount, setAmount] = useState(initialData?.amount || '');
             const [date, setDate] = useState(initialData?.date || new Date().toISOString().split('T')[0]);
             
-            // Pastikan category yang diset ada di dalam list yang aktif, jika tidak pilih yang pertama
             const defaultCategory = (categories[initialData?.type || 'spending'] || [])[0] || '';
             const [category, setCategory] = useState(initialData?.category || defaultCategory);
             
             const [description, setDescription] = useState(initialData?.description || '');
 
+            // NEW: State untuk pemilihan dompet & transfer
+            const [walletId, setWalletId] = useState(initialData?.walletId || (assets && assets.length > 0 ? assets[0].id : ''));
+            const [toWalletId, setToWalletId] = useState(initialData?.toWalletId || (assets && assets.length > 1 ? assets[1].id : (assets && assets.length > 0 ? assets[0].id : '')));
+
             const handleTypeChange = (newType) => {
                 triggerHaptic(10); 
                 setType(newType); 
-                setCategory(categories[newType][0] || '');
+                if (newType !== 'transfer') {
+                    setCategory(categories[newType]?.[0] || '');
+                } else {
+                    setCategory('Transfer Antar Kas');
+                }
             };
 
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!amount || !description) return;
-                // Sertakan ID lama saat melakukan Save agar bisa ditimpa
-                onSave({ type, amount: Number(amount), date, category, description }, initialData?.id);
+                if (type === 'transfer' && walletId === toWalletId) {
+                    alert('Dompet sumber dan tujuan tidak boleh sama!');
+                    return;
+                }
+                onSave({ type, amount: Number(amount), date, category: type === 'transfer' ? 'Transfer' : category, description, walletId, toWalletId: type === 'transfer' ? toWalletId : null }, initialData?.id);
             };
 
             const TYPE_OPTIONS = [
                 { id: 'spending', label: 'Spending' }, { id: 'bills', label: 'Bills' },
-                { id: 'income', label: 'Income' }, { id: 'savings', label: 'Savings' }, { id: 'debt', label: 'Debt/Cicilan' }
+                { id: 'income', label: 'Income' }, { id: 'savings', label: 'Savings' }, 
+                { id: 'debt', label: 'Debt/Cicilan' }, { id: 'transfer', label: 'Transfer' }
             ];
 
             return (
@@ -1971,7 +2032,7 @@
                             <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Tipe Cashflow</label>
                             <div className="flex flex-wrap gap-2">
                                 {TYPE_OPTIONS.map(opt => (
-                                    <button key={opt.id} type="button" onClick={() => handleTypeChange(opt.id)} className={`px-4 py-2 text-sm font-bold rounded-xl border ${type === opt.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                    <button key={opt.id} type="button" onClick={() => handleTypeChange(opt.id)} className={`px-4 py-2 text-sm font-bold rounded-xl border transition-colors ${type === opt.id ? (type === 'transfer' ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-900 text-white border-slate-900') : 'bg-white text-slate-500 border-slate-200'}`}>
                                         {opt.label}
                                     </button>
                                 ))}
@@ -1989,32 +2050,63 @@
                                         const val = e.target.value.replace(/\D/g, '');
                                         setAmount(val ? Number(val) : '');
                                     }} 
-                                    className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-2xl font-black text-slate-800 focus:outline-none focus:ring-4 focus:ring-emerald-500/20" 
+                                    className={`w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-2xl font-black text-slate-800 focus:outline-none focus:ring-4 ${type === 'transfer' ? 'focus:ring-blue-500/20' : 'focus:ring-emerald-500/20'}`} 
                                     placeholder="0" 
                                 />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
+                            <div className={type === 'transfer' ? 'md:col-span-2' : ''}>
                                 <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Tanggal</label>
-                                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={`w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 ${type === 'transfer' ? 'focus:ring-blue-500' : 'focus:ring-emerald-500'}`} />
                             </div>
-                            <div>
-                                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Kategori</label>
-                                <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                                    {(categories[type] || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                </select>
+                            
+                            {type === 'transfer' ? (
+                                <>
+                                    <div>
+                                        <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Dari Dompet (Sumber)</label>
+                                        <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            {assets.length === 0 && <option value="">-- Tidak ada dompet --</option>}
+                                            {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Ke Dompet (Tujuan)</label>
+                                        <select value={toWalletId} onChange={(e) => setToWalletId(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            {assets.length === 0 && <option value="">-- Tidak ada dompet --</option>}
+                                            {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Pilih Dompet / Rekening</label>
+                                    <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                        <option value="">-- Abaikan Saldo --</option>
+                                        {(assets || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {type !== 'transfer' && (
+                                <div>
+                                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Kategori</label>
+                                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                        {(categories[type] || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            <div className={type === 'transfer' ? 'md:col-span-2' : ''}>
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Keterangan Transaksi</label>
+                                <input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className={`w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 ${type === 'transfer' ? 'focus:ring-blue-500' : 'focus:ring-emerald-500'}`} placeholder={type === 'transfer' ? 'Catatan transfer...' : 'Beli makan...'} />
                             </div>
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Keterangan Transaksi</label>
-                            <input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Contoh: Beli makan siang..." />
-                        </div>
-
-                        <button type="submit" className="w-full bg-emerald-600 text-white font-black text-lg py-4 rounded-2xl flex justify-center items-center gap-2 mt-4">
-                            <Plus className="w-5 h-5" /> {initialData ? 'Simpan Perubahan' : 'Simpan Transaksi'}
+                        <button type="submit" className={`w-full text-white font-black text-lg py-4 rounded-2xl flex justify-center items-center gap-2 mt-4 hover:shadow-lg transition ${type === 'transfer' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                            {type === 'transfer' ? <ArrowsLeftRight className="w-5 h-5" /> : <Plus className="w-5 h-5" />} {initialData ? 'Simpan Perubahan' : (type === 'transfer' ? 'Pindah Saldo' : 'Catat Cashflow')}
                         </button>
                     </form>
                 </div>

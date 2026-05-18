@@ -113,12 +113,15 @@
             'Emas Antam (g)': 1400000, 'Emas G24 (g)': 1395000, 'Dinar KR': 4500000
         };
 
-        const triggerHaptic = (duration = 10) => {
-            if (typeof navigator !== 'undefined' && navigator.vibrate) { try { navigator.vibrate(duration); } catch (e) {} }
+        // Fungsi Getar Haptic Universal untuk Sensasi Taktil Premium di Mobile
+        const triggerHaptic = (duration = 15) => {
+            if (typeof navigator !== 'undefined' && navigator.vibrate) { 
+                try { navigator.vibrate(duration); } catch (e) {} 
+            }
         };
 
         // ==========================================
-        // FIREBASE SETUP (MASUKKAN KONFIGURASI ANDA DI SINI)
+        // FIREBASE SETUP (SINKRONISASI AKTIF)
         // ==========================================
         let app, auth, db, appId;
         const initFirebase = () => {
@@ -149,9 +152,9 @@
             const [cloudSyncStatus, setCloudSyncStatus] = useState('Menghubungkan...');
             const [privacyMode, setPrivacyMode] = useState(false);
             
-            // Logika Kunci Sinkronisasi (Mencegah Loop/Data Kosong)
+            // Logika Kunci Sinkronisasi (Mengegah Loop/Data Kosong)
             const isDataLoadedRef = useRef(false);
-            const isReceivingDataRef = useRef(false); // Flag agar save tidak tertabrak fetch
+            const isReceivingDataRef = useRef(false);
 
             const [rates, setRates] = useState(INITIAL_RATES);
             const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -224,10 +227,10 @@
                 const docRef = window.FB.doc(db, 'artifacts', appId, 'users', user.uid, 'appData', 'state');
                 
                 const unsubscribe = window.FB.onSnapshot(docRef, (docSnap) => {
-                    if (docSnap.metadata.hasPendingWrites) return; // Abaikan perubahan dari diri sendiri
+                    if (docSnap.metadata.hasPendingWrites) return;
 
                     if (docSnap.exists()) {
-                        isReceivingDataRef.current = true; // KUNCI: Jangan auto-save selama update state dari cloud
+                        isReceivingDataRef.current = true;
                         const data = docSnap.data();
                         
                         if (data.transactions) setTransactions(data.transactions);
@@ -241,7 +244,6 @@
                         setCloudSyncStatus('Tersinkronisasi');
                         isDataLoadedRef.current = true;
 
-                        // Lepaskan kunci setelah React selesai merender state
                         setTimeout(() => { isReceivingDataRef.current = false; }, 500);
                     } else {
                         isDataLoadedRef.current = true;
@@ -253,7 +255,6 @@
 
             // 3. AUTO-SAVE DATA KE CLOUD
             useEffect(() => {
-                // KUNCI: Jangan save jika data belum di-load ATAU sedang menerima data dari server
                 if (!user || !db || !isDataLoadedRef.current || isReceivingDataRef.current) return;
 
                 const timer = setTimeout(async () => {
@@ -265,7 +266,7 @@
                     } catch (error) {
                         setCloudSyncStatus('Gagal Simpan');
                     }
-                }, 1000); // Debounce 1 detik untuk performa
+                }, 1000);
                 
                 return () => clearTimeout(timer);
             }, [transactions, categories, budgets, goals, debts, assets, rates, user]);
@@ -275,13 +276,13 @@
                 const provider = new window.FB.GoogleAuthProvider();
                 provider.setCustomParameters({ prompt: 'select_account' });
                 try {
+                    triggerHaptic(20);
                     setCloudSyncStatus('Memproses Login...');
-                    isDataLoadedRef.current = false; // Reset status load
+                    isDataLoadedRef.current = false;
                     await window.FB.signInWithPopup(auth, provider);
                 } catch (err) { 
                     console.error("Login Error:", err);
-                    isDataLoadedRef.current = true; // Buka kembali kunci
-                    // Memberikan pesan error yang jelas kepada pengguna
+                    isDataLoadedRef.current = true;
                     if (err.code === 'auth/popup-blocked') {
                         setCloudSyncStatus('Gagal: Popup diblokir browser.');
                     } else if (err.code === 'auth/unauthorized-domain') {
@@ -296,6 +297,7 @@
 
             const handleLogout = async () => {
                 if (!auth || !window.FB) return;
+                triggerHaptic(20);
                 setUser(null); setTransactions([]); setAssets([]); setBudgets({}); setGoals([]); setDebts([]);
                 try {
                     await window.FB.signOut(auth);
@@ -304,6 +306,7 @@
             };
 
             const fetchLiveRates = async () => {
+                triggerHaptic(15);
                 setIsFetchingRates(true);
                 try {
                     const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
@@ -369,7 +372,6 @@
                     }
                 });
 
-                // Kekayaan bersih HANYA dari Tabungan dan Hutang/Piutang
                 return totalGoals + netDebtReceivable;
             }, [goals, debts, rates]);
 
@@ -400,7 +402,7 @@
                     <div className="bg-slate-900 text-white p-5 rounded-2xl">
                         <div className="flex justify-between items-start mb-1">
                             <p className="text-xs font-medium text-slate-400">Sisa Saldo Bulan Ini</p>
-                            <button onClick={() => setPrivacyMode(!privacyMode)} className="text-slate-400 p-1">
+                            <button onClick={() => { triggerHaptic(10); setPrivacyMode(!privacyMode); }} className="text-slate-400 p-1">
                                 {privacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
@@ -457,8 +459,8 @@
                                     {t.type === 'income' ? '+' : t.type === 'transfer' ? '' : '-'}{displayMoney(t.amount)}
                                 </span>
                                 <div className="flex gap-1">
-                                    <button onClick={() => { setEditingTx(t); setIsAddModalOpen(true); }} className="text-slate-400 p-1"><PencilSimple className="w-4 h-4" /></button>
-                                    <button onClick={() => setTransactions(prev => prev.filter(tx => tx.id !== t.id))} className="text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={() => { triggerHaptic(10); setEditingTx(t); setIsAddModalOpen(true); }} className="text-slate-400 p-1"><PencilSimple className="w-4 h-4" /></button>
+                                    <button onClick={() => { triggerHaptic(15); setTransactions(prev => prev.filter(tx => tx.id !== t.id)); }} className="text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                             </div>
                         </div>
@@ -470,13 +472,14 @@
             const renderPlanner = () => (
                 <div className="space-y-4 animate-in">
                     <div className="flex bg-slate-100 p-1 rounded-xl w-full">
-                        <button onClick={() => setPlannerTab('budget')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${plannerTab === 'budget' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Budget Bulanan</button>
-                        <button onClick={() => setPlannerTab('goals')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${plannerTab === 'goals' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Hutang & Tujuan</button>
+                        <button onClick={() => handlePlannerTabChange('budget')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${plannerTab === 'budget' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Budget Bulanan</button>
+                        <button onClick={() => handlePlannerTabChange('goals')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${plannerTab === 'goals' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Hutang & Tujuan</button>
                     </div>
 
                     {plannerTab === 'budget' && (
                         <div className="space-y-5">
                             {Object.entries(budgets).map(([cat, limit]) => {
+                                // Menghitung pengeluaran yang terdaftar (tidak termasuk transfer atau pemasukan)
                                 const spent = (transactions || []).filter(t => t.category === cat && t.type !== 'income' && t.type !== 'transfer').reduce((s, t) => s + t.amount, 0);
                                 const percentage = Math.min(100, (spent / limit) * 100);
                                 return (
@@ -484,14 +487,14 @@
                                         <div className="flex justify-between items-center mb-2">
                                             <span className="font-bold text-sm text-slate-800">{cat}</span>
                                             <div className="flex gap-1.5">
-                                                <button onClick={() => { setEditingBudget(cat); setTempBudgetLimit(String(limit)); }} className="text-slate-400 hover:text-indigo-500 p-1"><PencilSimple className="w-3.5 h-3.5"/></button>
-                                                <button onClick={() => { const b = {...budgets}; delete b[cat]; setBudgets(b); }} className="text-slate-400 hover:text-rose-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
+                                                <button onClick={() => { triggerHaptic(10); setEditingBudget(cat); setTempBudgetLimit(String(limit)); }} className="text-slate-400 hover:text-indigo-500 p-1"><PencilSimple className="w-3.5 h-3.5"/></button>
+                                                <button onClick={() => { triggerHaptic(15); const b = {...budgets}; delete b[cat]; setBudgets(b); }} className="text-slate-400 hover:text-rose-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
                                             </div>
                                         </div>
                                         {editingBudget === cat ? (
                                             <div className="flex gap-2 items-center mt-2 mb-1">
                                                 <input type="text" inputMode="numeric" className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-indigo-400" value={tempBudgetLimit ? Number(tempBudgetLimit).toLocaleString('id-ID') : ''} onChange={e => setTempBudgetLimit(e.target.value.replace(/\D/g, ''))} />
-                                                <button onClick={() => { if(tempBudgetLimit) { setBudgets({...budgets, [cat]: Number(tempBudgetLimit)}); setEditingBudget(null); } }} className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold">Simpan</button>
+                                                <button onClick={() => { if(tempBudgetLimit) { triggerHaptic(15); setBudgets({...budgets, [cat]: Number(tempBudgetLimit)}); setEditingBudget(null); } }} className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold">Simpan</button>
                                             </div>
                                         ) : (
                                             <>
@@ -509,19 +512,31 @@
                             })}
                             
                             {!isAddingBudget ? (
-                                <button onClick={() => setIsAddingBudget(true)} className="w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+                                <button onClick={() => { triggerHaptic(10); setIsAddingBudget(true); }} className="w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
                                     <Plus className="w-4 h-4"/> Tambah Limit Budgeting Baru
                                 </button>
                             ) : (
                                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col gap-3">
-                                    <select className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full" value={newBudgetCat} onChange={e => setNewBudgetCat(e.target.value)}>
+                                    {/* Menampung semua jenis kategori budgeting secara lengkap agar sinkron */}
+                                    <select className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full outline-none" value={newBudgetCat} onChange={e => setNewBudgetCat(e.target.value)}>
                                         <option value="">Pilih Kategori</option>
-                                        {[...categories.spending, ...categories.bills, ...categories.savings].map(c => <option key={c} value={c}>{c}</option>)}
+                                        <optgroup label="Pengeluaran (Spending)">
+                                            {(categories.spending || []).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Tagihan (Bills)">
+                                            {(categories.bills || []).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Tabungan (Savings/Goals)">
+                                            {(categories.savings || []).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Cicilan (Debt)">
+                                            {(categories.debt || []).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </optgroup>
                                     </select>
-                                    <input type="text" inputMode="numeric" placeholder="Nominal Budget Limit" className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full" value={newBudgetLimit ? Number(newBudgetLimit).toLocaleString('id-ID') : ''} onChange={e => setNewBudgetLimit(e.target.value.replace(/\D/g, ''))} />
+                                    <input type="text" inputMode="numeric" placeholder="Nominal Budget Limit" className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full outline-none" value={newBudgetLimit ? Number(newBudgetLimit).toLocaleString('id-ID') : ''} onChange={e => setNewBudgetLimit(e.target.value.replace(/\D/g, ''))} />
                                     <div className="flex gap-2">
-                                        <button onClick={() => { if(newBudgetCat && newBudgetLimit) { setBudgets({...budgets, [newBudgetCat]: Number(newBudgetLimit)}); setIsAddingBudget(false); setNewBudgetCat(''); setNewBudgetLimit(''); }}} className="flex-1 bg-emerald-600 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
-                                        <button onClick={() => setIsAddingBudget(false)} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
+                                        <button onClick={() => { if(newBudgetCat && newBudgetLimit) { triggerHaptic(15); setBudgets({...budgets, [newBudgetCat]: Number(newBudgetLimit)}); setIsAddingBudget(false); setNewBudgetCat(''); setNewBudgetLimit(''); }}} className="flex-1 bg-emerald-600 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
+                                        <button onClick={() => { triggerHaptic(10); setIsAddingBudget(false); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
                                     </div>
                                 </div>
                             )}
@@ -549,8 +564,8 @@
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-2">
-                                                        <button onClick={() => setViewingGoalId(goal.id)} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold border border-slate-100">Detail</button>
-                                                        <button onClick={() => setGoals(goals.filter(g => g.id !== goal.id))} className="px-2 py-1.5 bg-rose-50 text-rose-500 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                                                        <button onClick={() => { triggerHaptic(10); setViewingGoalId(goal.id); }} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold border border-slate-100">Detail</button>
+                                                        <button onClick={() => { triggerHaptic(15); setGoals(goals.filter(g => g.id !== goal.id)); }} className="px-2 py-1.5 bg-rose-50 text-rose-500 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
                                                     </div>
                                                 </div>
                                                 <div className="w-full bg-slate-50 rounded-full h-1.5">
@@ -562,7 +577,7 @@
                                 </div>
                                 
                                 {!isAddingGoal ? (
-                                    <button onClick={() => setIsAddingGoal(true)} className="w-full mt-3 py-3 bg-white border border-dashed border-slate-300 text-slate-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition">
+                                    <button onClick={() => { triggerHaptic(10); setIsAddingGoal(true); }} className="w-full mt-3 py-3 bg-white border border-dashed border-slate-300 text-slate-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition">
                                         <Plus className="w-4 h-4"/> Tambah Tujuan Tabungan
                                     </button>
                                 ) : (
@@ -570,8 +585,8 @@
                                         <input type="text" placeholder="Nama Tujuan (Cth: Beli Motor)" className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full outline-none focus:border-indigo-400" value={newGoalName} onChange={e => setNewGoalName(e.target.value)} />
                                         <input type="text" inputMode="numeric" placeholder="Target Nominal (Rp)" className="p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold w-full outline-none focus:border-indigo-400" value={newGoalTarget ? Number(newGoalTarget).toLocaleString('id-ID') : ''} onChange={e => setNewGoalTarget(e.target.value.replace(/\D/g, ''))} />
                                         <div className="flex gap-2">
-                                            <button onClick={() => { if(newGoalName && newGoalTarget) { setGoals([...goals, { id: Date.now(), name: newGoalName, target: Number(newGoalTarget), collapsed: false, assets: [] }]); setIsAddingGoal(false); setNewGoalName(''); setNewGoalTarget(''); }}} className="flex-1 bg-slate-800 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
-                                            <button onClick={() => setIsAddingGoal(false)} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
+                                            <button onClick={() => { if(newGoalName && newGoalTarget) { triggerHaptic(15); setGoals([...goals, { id: Date.now(), name: newGoalName, target: Number(newGoalTarget), collapsed: false, assets: [] }]); setIsAddingGoal(false); setNewGoalName(''); setNewGoalTarget(''); }}} className="flex-1 bg-slate-800 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
+                                            <button onClick={() => { triggerHaptic(10); setIsAddingGoal(false); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
                                         </div>
                                     </div>
                                 )}
@@ -591,15 +606,15 @@
                                                     <p className="text-[10px] font-bold mt-0.5 text-slate-400">Sisa: <span className={isDebt ? 'text-rose-500' : 'text-emerald-500'}>{displayMoney(sisa)}</span></p>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => setViewingDebtId(debt.id)} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold border border-slate-100">Detail</button>
-                                                    <button onClick={() => setDebts(debts.filter(d => d.id !== debt.id))} className="px-2 py-1.5 bg-rose-50 text-rose-500 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                                                    <button onClick={() => { triggerHaptic(10); setViewingDebtId(debt.id); }} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold border border-slate-100">Detail</button>
+                                                    <button onClick={() => { triggerHaptic(15); setDebts(debts.filter(d => d.id !== debt.id)); }} className="px-2 py-1.5 bg-rose-50 text-rose-500 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
                                 {!isAddingDebt ? (
-                                    <button onClick={() => setIsAddingDebt(true)} className="w-full mt-3 py-3 bg-white border border-dashed border-slate-300 text-slate-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+                                    <button onClick={() => { triggerHaptic(10); setIsAddingDebt(true); }} className="w-full mt-3 py-3 bg-white border border-dashed border-slate-300 text-slate-600 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
                                         <Plus className="w-4 h-4"/> Tambah Catatan Hutang/Piutang
                                     </button>
                                 ) : (
@@ -612,8 +627,8 @@
                                             <input type="text" inputMode="numeric" placeholder="Total (Rp)" className="flex-1 p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold" value={newDebt.total ? Number(newDebt.total).toLocaleString('id-ID') : ''} onChange={e => setNewDebt({...newDebt, total: e.target.value.replace(/\D/g, '')})} />
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => { if(newDebt.name && newDebt.total) { setDebts([...debts, { id: Date.now(), name: newDebt.name, total: Number(newDebt.total), paid: 0, type: newDebt.type }]); setIsAddingDebt(false); setNewDebt({name:'', total:'', type:'debt'}); }}} className="flex-1 bg-slate-800 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
-                                            <button onClick={() => setIsAddingDebt(false)} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
+                                            <button onClick={() => { if(newDebt.name && newDebt.total) { triggerHaptic(15); setDebts([...debts, { id: Date.now(), name: newDebt.name, total: Number(newDebt.total), paid: 0, type: newDebt.type }]); setIsAddingDebt(false); setNewDebt({name:'', total:'', type:'debt'}); }}} className="flex-1 bg-slate-800 text-white rounded-xl py-2.5 font-bold text-sm">Simpan</button>
+                                            <button onClick={() => { triggerHaptic(10); setIsAddingDebt(false); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-2.5 font-bold text-sm">Batal</button>
                                         </div>
                                     </div>
                                 )}
@@ -627,8 +642,8 @@
                 <div className="space-y-4 animate-in">
                     
                     <div className="flex bg-slate-100 p-1 rounded-xl w-full mb-2">
-                        <button onClick={() => setProfileTab('networth')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${profileTab === 'networth' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Dompet & Aset</button>
-                        <button onClick={() => setProfileTab('settings')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${profileTab === 'settings' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Pengaturan Data</button>
+                        <button onClick={() => handleProfileTabChange('networth')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${profileTab === 'networth' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Dompet & Aset</button>
+                        <button onClick={() => handleProfileTabChange('settings')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${profileTab === 'settings' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Pengaturan Data</button>
                     </div>
 
                     {profileTab === 'networth' && (
@@ -651,10 +666,11 @@
                                                     <div className="flex gap-2">
                                                         <input type="text" inputMode="numeric" className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-indigo-400" value={asset.unit === 'IDR' && tempAsset.quantity ? Number(tempAsset.quantity).toLocaleString('id-ID') : tempAsset.quantity} onChange={e => { let val = e.target.value; if (asset.unit === 'IDR') val = val.replace(/\D/g, ''); setTempAsset({...tempAsset, quantity: val}); }} placeholder="Saldo Baru" />
                                                         <button onClick={() => {
+                                                            triggerHaptic(15);
                                                             setAssets(assets.map(a => a.id === asset.id ? { ...a, name: tempAsset.name, quantity: Number(tempAsset.quantity) } : a));
                                                             setEditingAssetId(null);
                                                         }} className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold shrink-0">Simpan</button>
-                                                        <button onClick={() => setEditingAssetId(null)} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold shrink-0">Batal</button>
+                                                        <button onClick={() => { triggerHaptic(10); setEditingAssetId(null); }} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold shrink-0">Batal</button>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -668,8 +684,8 @@
                                                             <p className="font-bold text-sm text-emerald-600">{displayMoney(getAssetValueInIDR(asset))}</p>
                                                             {asset.unit !== 'IDR' && <p className="text-[9px] text-slate-400">{asset.quantity !== undefined ? asset.quantity : asset.amount} {asset.unit}</p>}
                                                         </div>
-                                                        <button onClick={() => { setEditingAssetId(asset.id); setTempAsset({ name: asset.name, quantity: String(asset.quantity !== undefined ? asset.quantity : (asset.amount || 0)) }); }} className="text-slate-400 hover:text-indigo-500 p-1"><PencilSimple className="w-4 h-4"/></button>
-                                                        <button onClick={() => setAssets(assets.filter(a => a.id !== asset.id))} className="text-rose-400 p-1"><Trash2 className="w-4 h-4"/></button>
+                                                        <button onClick={() => { triggerHaptic(10); setEditingAssetId(asset.id); setTempAsset({ name: asset.name, quantity: String(asset.quantity !== undefined ? asset.quantity : (asset.amount || 0)) }); }} className="text-slate-400 hover:text-indigo-500 p-1"><PencilSimple className="w-4 h-4"/></button>
+                                                        <button onClick={() => { triggerHaptic(15); setAssets(assets.filter(a => a.id !== asset.id)); }} className="text-rose-400 p-1"><Trash2 className="w-4 h-4"/></button>
                                                     </div>
                                                 </div>
                                             )}
@@ -678,7 +694,7 @@
                                 </div>
                                 
                                 {!isAddingAsset ? (
-                                    <button onClick={() => setIsAddingAsset(true)} className="w-full mt-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5">
+                                    <button onClick={() => { triggerHaptic(10); setIsAddingAsset(true); }} className="w-full mt-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5">
                                         <Plus className="w-3.5 h-3.5"/> Tambah Dompet / Rekening
                                     </button>
                                 ) : (
@@ -691,8 +707,8 @@
                                             <input type="text" inputMode="numeric" placeholder="Saldo Saat Ini" className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold w-2/3" value={newAsset.unit === 'IDR' && newAsset.quantity ? Number(newAsset.quantity).toLocaleString('id-ID') : newAsset.quantity} onChange={e => { let val = e.target.value; if (newAsset.unit === 'IDR') val = val.replace(/\D/g, ''); setNewAsset({...newAsset, quantity: val}); }}/>
                                         </div>
                                         <div className="flex gap-2 mt-1">
-                                            <button onClick={() => { if(newAsset.name && newAsset.quantity) { setAssets([...assets, { ...newAsset, id: Date.now(), quantity: Number(newAsset.quantity) }]); setIsAddingAsset(false); setNewAsset({name:'', category:'Bank Cash', unit:'IDR', quantity:''}); }}} className="flex-1 bg-emerald-600 text-white rounded-lg py-2 font-bold text-xs">Simpan</button>
-                                            <button onClick={() => setIsAddingAsset(false)} className="flex-1 bg-slate-200 text-slate-700 rounded-lg py-2 font-bold text-xs">Batal</button>
+                                            <button onClick={() => { if(newAsset.name && newAsset.quantity) { triggerHaptic(15); setAssets([...assets, { ...newAsset, id: Date.now(), quantity: Number(newAsset.quantity) }]); setIsAddingAsset(false); setNewAsset({name:'', category:'Bank Cash', unit:'IDR', quantity:''}); }}} className="flex-1 bg-emerald-600 text-white rounded-lg py-2 font-bold text-xs">Simpan</button>
+                                            <button onClick={() => { triggerHaptic(10); setIsAddingAsset(false); }} className="flex-1 bg-slate-200 text-slate-700 rounded-lg py-2 font-bold text-xs">Batal</button>
                                         </div>
                                     </div>
                                 )}
@@ -725,7 +741,7 @@
                                                 {list.map(cat => (
                                                     <div key={cat} className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-1 rounded-md text-xs">
                                                         <span className="font-bold text-slate-700">{cat}</span>
-                                                        <button onClick={() => setCategories({...categories, [type]: categories[type].filter(c => c !== cat)})} className="text-slate-400 hover:text-rose-500"><X className="w-3 h-3"/></button>
+                                                        <button onClick={() => { triggerHaptic(15); setCategories({...categories, [type]: categories[type].filter(c => c !== cat)}); }} className="text-slate-400 hover:text-rose-500"><X className="w-3 h-3"/></button>
                                                     </div>
                                                 ))}
                                             </div>
@@ -734,7 +750,7 @@
                                 </div>
                                 
                                 {!isAddingCategory ? (
-                                    <button onClick={() => setIsAddingCategory(true)} className="w-full mt-4 py-2.5 border border-dashed border-indigo-200 text-indigo-600 bg-indigo-50/50 rounded-xl font-bold text-xs flex justify-center items-center gap-1.5 hover:bg-indigo-50 transition">
+                                    <button onClick={() => { triggerHaptic(10); setIsAddingCategory(true); }} className="w-full mt-4 py-2.5 border border-dashed border-indigo-200 text-indigo-600 bg-indigo-50/50 rounded-xl font-bold text-xs flex justify-center items-center gap-1.5 hover:bg-indigo-50 transition">
                                         <Plus className="w-3.5 h-3.5"/> Tambah Kategori
                                     </button>
                                 ) : (
@@ -745,8 +761,8 @@
                                         </select>
                                         <input type="text" placeholder="Nama Kategori Baru" className="p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold w-full" value={newCatName} onChange={e => setNewCatName(e.target.value)}/>
                                         <div className="flex gap-2 mt-1">
-                                            <button onClick={() => { if(newCatName) { setCategories({...categories, [newCatType]: [...categories[newCatType], newCatName]}); setNewCatName(''); setIsAddingCategory(false); }}} className="flex-1 bg-indigo-600 text-white rounded-lg py-2 font-bold text-xs">Simpan</button>
-                                            <button onClick={() => { setIsAddingCategory(false); setNewCatName(''); }} className="flex-1 bg-slate-200 text-slate-700 rounded-lg py-2 font-bold text-xs">Batal</button>
+                                            <button onClick={() => { if(newCatName) { triggerHaptic(15); setCategories({...categories, [newCatType]: [...categories[newCatType], newCatName]}); setNewCatName(''); setIsAddingCategory(false); }}} className="flex-1 bg-indigo-600 text-white rounded-lg py-2 font-bold text-xs">Simpan</button>
+                                            <button onClick={() => { triggerHaptic(10); setIsAddingCategory(false); setNewCatName(''); }} className="flex-1 bg-slate-200 text-slate-700 rounded-lg py-2 font-bold text-xs">Batal</button>
                                         </div>
                                     </div>
                                 )}
@@ -804,7 +820,7 @@
                             <h1 className="text-lg font-black text-slate-900">Loka Planner</h1>
                         </div>
                         {(activeTab === 'dashboard' || activeTab === 'transactions') && (
-                            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-700 py-1.5 px-2 outline-none">
+                            <select value={selectedMonth} onChange={(e) => { triggerHaptic(10); setSelectedMonth(e.target.value); }} className="bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-700 py-1.5 px-2 outline-none">
                                 <option value="all">Semua</option>
                                 {['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'].map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                             </select>
@@ -844,7 +860,7 @@
                         <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-end animate-in">
                             <TransactionForm 
                                 initialData={editingTx} assets={assets} categories={categories}
-                                onClose={() => { setIsAddModalOpen(false); setEditingTx(null); }} 
+                                onClose={() => { triggerHaptic(10); setIsAddModalOpen(false); setEditingTx(null); }} 
                                 onSave={(newTx, editId) => { 
                                     triggerHaptic(20);
                                     let oldTx = editId ? transactions.find(t => t.id === editId) : null;
@@ -887,7 +903,7 @@
                         return (
                             <div className="fixed inset-0 bg-white z-[70] flex flex-col animate-in">
                                 <header className="bg-white px-5 py-4 flex items-center border-b border-slate-100 shadow-sm">
-                                    <button onClick={() => setViewingDebtId(null)} className="p-1 mr-3"><ArrowLeft className="w-5 h-5" /></button>
+                                    <button onClick={() => { triggerHaptic(10); setViewingDebtId(null); }} className="p-1 mr-3"><ArrowLeft className="w-5 h-5" /></button>
                                     <h2 className="font-bold text-sm truncate flex-1">{debt.name}</h2>
                                 </header>
                                 <div className="p-5 overflow-y-auto flex-1">
@@ -918,6 +934,7 @@
                                         </select>
                                         <button onClick={() => {
                                             if(!debtTxForm.amount) return;
+                                            triggerHaptic(15);
                                             const amt = Number(debtTxForm.amount);
                                             const newTx = { id: Date.now(), date: new Date().toISOString().split('T')[0], type: debtTxForm.type, amount: amt, note: debtTxForm.type === 'payment' ? 'Pembayaran' : 'Penambahan' };
                                             setDebts(debts.map(d => d.id === viewingDebtId ? { ...d, total: debtTxForm.type === 'increase' ? d.total + amt : d.total, paid: debtTxForm.type === 'payment' ? d.paid + amt : d.paid, history: [newTx, ...(d.history||[])] } : d));
@@ -938,7 +955,7 @@
                         return (
                             <div className="fixed inset-0 bg-white z-[70] flex flex-col animate-in">
                                 <header className="bg-white px-5 py-4 flex items-center border-b border-slate-100 shadow-sm">
-                                    <button onClick={() => setViewingGoalId(null)} className="p-1 mr-3"><ArrowLeft className="w-5 h-5" /></button>
+                                    <button onClick={() => { triggerHaptic(10); setViewingGoalId(null); }} className="p-1 mr-3"><ArrowLeft className="w-5 h-5" /></button>
                                     <input type="text" className="font-bold text-sm truncate flex-1 bg-transparent outline-none" value={goal.name} onChange={e => updateGoal(goal.id, 'name', e.target.value)} placeholder="Nama Tujuan" />
                                 </header>
                                 <div className="p-5 overflow-y-auto flex-1">
@@ -1014,7 +1031,7 @@
                     <form onSubmit={e => { e.preventDefault(); if(amount && description && !(type === 'transfer' && walletId === toWalletId)) onSave({ type, amount: Number(amount), date, category: type==='transfer'?'Transfer':category, description, walletId, toWalletId }, initialData?.id); }} className="space-y-4">
                         <div className="grid grid-cols-3 gap-2">
                             {TYPE_OPT.map(o => (
-                                <button key={o.id} type="button" onClick={() => { setType(o.id); if(o.id !== 'transfer') setCategory(categories[o.id]?.[0] || ''); }} className={`py-2 rounded-lg text-[11px] font-bold border transition ${type === o.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}>{o.l}</button>
+                                <button key={o.id} type="button" onClick={() => { triggerHaptic(10); setType(o.id); if(o.id !== 'transfer') setCategory(categories[o.id]?.[0] || ''); }} className={`py-2 rounded-lg text-[11px] font-bold border transition ${type === o.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}>{o.l}</button>
                             ))}
                         </div>
                         <input type="text" inputMode="numeric" required placeholder="Nominal (Rp)" value={amount ? Number(amount).toLocaleString('id-ID') : ''} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} className="w-full p-4 bg-slate-50 rounded-xl text-xl font-black focus:outline-none focus:ring-2 focus:ring-slate-300" />

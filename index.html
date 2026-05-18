@@ -123,12 +123,13 @@
         let app, auth, db, appId;
         const initFirebase = () => {
             const MY_FIREBASE_CONFIG = {
-                apiKey: "API_KEY_ANDA_DISINI", // Ganti dengan apiKey Anda
-                authDomain: "DOMAIN_ANDA_DISINI.firebaseapp.com", // Ganti dengan authDomain Anda
-                projectId: "PROJECT_ID_ANDA", // Ganti dengan projectId Anda
-                storageBucket: "BUCKET_ANDA.firebasestorage.app",
-                messagingSenderId: "SENDER_ID_ANDA",
-                appId: "APP_ID_ANDA", // Ganti dengan appId Anda
+                apiKey: "AIzaSyDRbntP1nEpvFgYViRRA0UDQ22v7rCRp4Y",
+                authDomain: "lokaplanner-finance.firebaseapp.com",
+                projectId: "lokaplanner-finance",
+                storageBucket: "lokaplanner-finance.firebasestorage.app",
+                messagingSenderId: "1045492224881",
+                appId: "1:1045492224881:web:8790f7c1b48c8371e1dcd0",
+                measurementId: "G-H3FBSF7WDD"
             };
             const firebaseConfig = typeof window.__firebase_config !== 'undefined' && window.__firebase_config ? JSON.parse(window.__firebase_config) : MY_FIREBASE_CONFIG;
             
@@ -195,13 +196,16 @@
                         } else {
                             await window.FB.signInAnonymously(auth);
                         }
-                    } catch (error) { setCloudSyncStatus('Error Login'); }
+                    } catch (error) { 
+                        console.error("Auth Init Error:", error);
+                        setCloudSyncStatus('Lokal (Auth Error)'); 
+                    }
                 };
                 initializeAuth();
 
                 const unsubscribe = window.FB.onAuthStateChanged(auth, (currentUser) => {
                     setUser(currentUser);
-                    if (currentUser) setCloudSyncStatus(currentUser.isAnonymous ? 'Mode Lokal' : 'Tersinkronisasi');
+                    if (currentUser) setCloudSyncStatus(currentUser.isAnonymous ? 'Mode Lokal / Anonim' : 'Tersinkronisasi');
                 });
                 return () => unsubscribe();
             }, []);
@@ -263,9 +267,23 @@
                 const provider = new window.FB.GoogleAuthProvider();
                 provider.setCustomParameters({ prompt: 'select_account' });
                 try {
-                    setCloudSyncStatus('Login Google...');
+                    setCloudSyncStatus('Memproses Login...');
+                    isDataLoadedRef.current = false; // Reset status load
                     await window.FB.signInWithPopup(auth, provider);
-                } catch (err) { setCloudSyncStatus('Gagal Login'); }
+                } catch (err) { 
+                    console.error("Login Error:", err);
+                    isDataLoadedRef.current = true; // Buka kembali kunci
+                    // Memberikan pesan error yang jelas kepada pengguna
+                    if (err.code === 'auth/popup-blocked') {
+                        setCloudSyncStatus('Gagal: Popup diblokir browser.');
+                    } else if (err.code === 'auth/unauthorized-domain') {
+                        setCloudSyncStatus('Gagal: Domain belum diizinkan.');
+                    } else if (err.code === 'auth/invalid-api-key') {
+                        setCloudSyncStatus('Gagal: API Key Salah/Kosong.');
+                    } else {
+                        setCloudSyncStatus('Gagal: ' + (err.code || 'Silakan coba lagi'));
+                    }
+                }
             };
 
             const handleLogout = async () => {
@@ -734,7 +752,7 @@
                                 </div>
                                 
                                 <div className="border-t border-slate-100 pt-4">
-                                    <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Coins className="w-4 h-4 text-amber-500"/> Harga Aset Manual (IDR)</h3>
+                                    <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Coins className="w-4 h-4 text-amber-500"/> Harga Emas Manual (IDR)</h3>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
                                             <label className="text-xs font-bold text-slate-600">Emas Antam /g</label>
@@ -745,12 +763,8 @@
                                             <input type="text" className="w-24 text-right bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-bold" value={(rates['Emas G24 (g)'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Emas G24 (g)', e.target.value)} />
                                         </div>
                                         <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                            <label className="text-xs font-bold text-slate-600">Reksadana (IDR)</label>
-                                            <input type="text" className="w-24 text-right bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-bold" value={(rates['Reksadana (IDR)'] || 1).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Reksadana (IDR)', e.target.value)} />
-                                        </div>
-                                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                            <label className="text-xs font-bold text-slate-600">Saham (IDR)</label>
-                                            <input type="text" className="w-24 text-right bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-bold" value={(rates['Saham (IDR)'] || 1).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Saham (IDR)', e.target.value)} />
+                                            <label className="text-xs font-bold text-slate-600">Dinar KR</label>
+                                            <input type="text" className="w-24 text-right bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-bold" value={(rates['Dinar KR'] || 0).toLocaleString('id-ID')} onChange={(e) => handleRateChange('Dinar KR', e.target.value)} />
                                         </div>
                                     </div>
                                 </div>

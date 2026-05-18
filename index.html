@@ -185,6 +185,11 @@
             const [viewingDebtId, setViewingDebtId] = useState(null);
             const [editingBudget, setEditingBudget] = useState(null);
             const [tempBudgetLimit, setTempBudgetLimit] = useState('');
+            
+            // State untuk Edit Dompet/Aset
+            const [editingAssetId, setEditingAssetId] = useState(null);
+            const [tempAsset, setTempAsset] = useState({ name: '', quantity: '' });
+
             const [viewingGoalId, setViewingGoalId] = useState(null);
             const [isDebtTxModalOpen, setIsDebtTxModalOpen] = useState(false);
             const [debtTxForm, setDebtTxForm] = useState({ type: 'payment', amount: '', date: new Date().toISOString().split('T')[0], note: '', sync: false, walletId: '' });
@@ -350,11 +355,23 @@
             }, [filteredTransactions]);
 
             const totalNetWorth = useMemo(() => {
-                const totalAssets = assets.reduce((s, a) => s + getAssetValueInIDR(a), 0);
+                // Total dari sub-aset Tabungan (Goals)
                 const totalGoals = goals.reduce((s, g) => s + (g.assets || []).reduce((as, a) => as + getAssetValueInIDR(a), 0), 0);
-                const totalDebts = debts.reduce((s, d) => s + (d.type === 'debt' ? (Number(d.total) || 0) - (Number(d.paid) || 0) : 0), 0);
-                return totalAssets + totalGoals - totalDebts;
-            }, [assets, goals, debts, rates]);
+                
+                // Total dari Hutang dan Piutang (Debts)
+                let netDebtReceivable = 0;
+                debts.forEach(d => {
+                    const sisa = (Number(d.total) || 0) - (Number(d.paid) || 0);
+                    if (d.type === 'debt') {
+                        netDebtReceivable -= sisa; // Hutang mengurangi kekayaan
+                    } else if (d.type === 'receivable') {
+                        netDebtReceivable += sisa; // Piutang menambah kekayaan
+                    }
+                });
+
+                // Kekayaan bersih HANYA dari Tabungan dan Hutang/Piutang
+                return totalGoals + netDebtReceivable;
+            }, [goals, debts, rates]);
 
             const handleTabChange = (tabName) => { triggerHaptic(10); setActiveTab(tabName); window.scrollTo(0,0); };
             const handlePlannerTabChange = (tabName) => { triggerHaptic(10); setPlannerTab(tabName); };
@@ -628,17 +645,34 @@
                                 <div className="space-y-3">
                                     {assets.map(asset => (
                                         <div key={asset.id} className="flex justify-between items-center border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-                                            <div>
-                                                <p className="font-bold text-sm text-slate-800">{asset.name}</p>
-                                                <p className="text-[10px] text-slate-500">{asset.category}</p>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <div className="text-right">
-                                                    <p className="font-bold text-sm text-emerald-600">{displayMoney(getAssetValueInIDR(asset))}</p>
-                                                    {asset.unit !== 'IDR' && <p className="text-[9px] text-slate-400">{asset.quantity !== undefined ? asset.quantity : asset.amount} {asset.unit}</p>}
+                                            {editingAssetId === asset.id ? (
+                                                <div className="flex flex-col gap-2 w-full mt-1">
+                                                    <input type="text" className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold w-full outline-none focus:border-indigo-400" value={tempAsset.name} onChange={e => setTempAsset({...tempAsset, name: e.target.value})} placeholder="Nama Dompet" />
+                                                    <div className="flex gap-2">
+                                                        <input type="text" inputMode="numeric" className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-indigo-400" value={asset.unit === 'IDR' && tempAsset.quantity ? Number(tempAsset.quantity).toLocaleString('id-ID') : tempAsset.quantity} onChange={e => { let val = e.target.value; if (asset.unit === 'IDR') val = val.replace(/\D/g, ''); setTempAsset({...tempAsset, quantity: val}); }} placeholder="Saldo Baru" />
+                                                        <button onClick={() => {
+                                                            setAssets(assets.map(a => a.id === asset.id ? { ...a, name: tempAsset.name, quantity: Number(tempAsset.quantity) } : a));
+                                                            setEditingAssetId(null);
+                                                        }} className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold shrink-0">Simpan</button>
+                                                        <button onClick={() => setEditingAssetId(null)} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold shrink-0">Batal</button>
+                                                    </div>
                                                 </div>
-                                                <button onClick={() => setAssets(assets.filter(a => a.id !== asset.id))} className="text-rose-400 p-1"><Trash2 className="w-4 h-4"/></button>
-                                            </div>
+                                            ) : (
+                                                <div className="flex justify-between items-center w-full">
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800">{asset.name}</p>
+                                                        <p className="text-[10px] text-slate-500">{asset.category}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="text-right mr-2">
+                                                            <p className="font-bold text-sm text-emerald-600">{displayMoney(getAssetValueInIDR(asset))}</p>
+                                                            {asset.unit !== 'IDR' && <p className="text-[9px] text-slate-400">{asset.quantity !== undefined ? asset.quantity : asset.amount} {asset.unit}</p>}
+                                                        </div>
+                                                        <button onClick={() => { setEditingAssetId(asset.id); setTempAsset({ name: asset.name, quantity: String(asset.quantity !== undefined ? asset.quantity : (asset.amount || 0)) }); }} className="text-slate-400 hover:text-indigo-500 p-1"><PencilSimple className="w-4 h-4"/></button>
+                                                        <button onClick={() => setAssets(assets.filter(a => a.id !== asset.id))} className="text-rose-400 p-1"><Trash2 className="w-4 h-4"/></button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
